@@ -1,6 +1,6 @@
 # Spotify Controller
 
-A client-side Fabric mod for **Minecraft 26.3** that connects to the Spotify Web API via OAuth 2.0 PKCE, renders a draggable in-game **Now Playing** HUD widget, and lets you control Spotify playback through keybinds, an interactive controller UI, and client commands.
+A client-side Fabric mod for **Minecraft 26.3** and **26.2** that connects to the Spotify Web API via OAuth 2.0 PKCE, renders a draggable in-game **Now Playing** HUD widget, and lets you control Spotify playback through keybinds, an interactive controller UI, and client commands.
 
 Because everything runs client-side, it works in singleplayer and on any multiplayer server without requiring server-side installation.
 
@@ -33,9 +33,9 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Requirements
 
-- **Minecraft:** `26.3`
+- **Minecraft:** `26.3` (`spotify-controller-0.5.0.jar`) or `26.2` (`spotify-controller-0.5.0-mc26.2.jar`)
 - **Fabric Loader:** `>=0.19.0`
-- **Fabric API:** `0.166.2+26.3` (or compatible `26.3` build)
+- **Fabric API:** `0.166.2+26.3` (for `26.3`) or `0.161.0+26.2` (for `26.2`)
 - **Java:** `25`
 - **Spotify Account:**
   - Viewing the currently playing track works on Free and Premium accounts.
@@ -45,7 +45,7 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Setup Guide
 
-1. Place `spotify-controller-0.5.0.jar` and Fabric API into your Minecraft `mods/` folder and launch Minecraft `26.3`.
+1. Place `spotify-controller-0.5.0.jar` (for `26.3`) or `spotify-controller-0.5.0-mc26.2.jar` (for `26.2`) and the matching Fabric API into your Minecraft `mods/` folder and launch Minecraft.
 2. Join a world—if no Client ID is set yet, you'll see a prompt in chat. Press **`O`** (or **`Z`**, or run `/spotify setup`) to open the **3-Step First-Time Setup Wizard** inside Minecraft:
    - **Step 1 — Create App:** Click **Open Spotify Dashboard**, sign in, click **Create app**, give it any name/description, and check **Web API**.
    - **Step 2 — Redirect URL:** Click **Copy Redirect URL** in-game to copy `http://127.0.0.1:8888/callback` *(use `127.0.0.1`, not `localhost`)*, paste it into **Redirect URIs**, click **Add**, accept the Terms of Service, and click **Save**.
@@ -91,11 +91,17 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 Requires **JDK 25**.
 
 ```bash
-# Linux / macOS
+# Linux / macOS (Minecraft 26.3)
 ./gradlew build
 
-# Windows PowerShell
+# Linux / macOS (Minecraft 26.2)
+./gradlew build -Pmc262
+
+# Windows PowerShell (Minecraft 26.3)
 .\gradlew.bat build
+
+# Windows PowerShell (Minecraft 26.2)
+.\gradlew.bat build -Pmc262
 ```
 
-The compiled mod jar will be output to `build/libs/spotify-controller-0.5.0.jar`.
+The compiled mod jars will be output to `build/libs/spotify-controller-0.5.0.jar` (`26.3`) and `build/libs/spotify-controller-0.5.0-mc26.2.jar` (`26.2`).

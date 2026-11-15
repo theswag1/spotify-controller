@@ -1,6 +1,5 @@
 package com.noah.spotifycontroller.gui;
 
-import com.mojang.blaze3d.Blaze3D;
 import com.noah.spotifycontroller.SpotifyControllerClient;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
@@ -370,7 +369,7 @@ public class SpotifySetupGuideScreen extends Screen {
     }
 
     private void openDashboard() {
-        Blaze3D.openUri(URI.create(DASHBOARD_URL));
+        SpotifyControllerClient.openBrowserUri(URI.create(DASHBOARD_URL));
         this.statusMessage = "Opened Spotify Developer Dashboard in your browser.";
     }
 

@@ -4,7 +4,16 @@ plugins {
     id 'maven-publish'
 }
 
-version = project.mod_version
+def targetMcVersion = project.hasProperty('target_mc_version')
+        ? project.property('target_mc_version').toString()
+        : (project.hasProperty('mc262') ? '26.2' : project.minecraft_version.toString())
+def targetFabricApiVersion = targetMcVersion == '26.2'
+        ? project.fabric_api_version_26_2.toString()
+        : project.fabric_api_version.toString()
+
+version = targetMcVersion == project.minecraft_version.toString()
+        ? project.mod_version
+        : "${project.mod_version}-mc${targetMcVersion}"
 group = project.maven_group
 
 base {
@@ -16,9 +25,9 @@ repositories {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    minecraft "com.mojang:minecraft:${targetMcVersion}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${targetFabricApiVersion}"
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -27,9 +36,13 @@ dependencies {
 
 processResources {
     inputs.property "version", project.version
+    inputs.property "minecraft_version", targetMcVersion
 
     filesMatching("fabric.mod.json") {
-        expand "version": inputs.properties.version
+        expand(
+                "version": inputs.properties.version,
+                "minecraft_version": inputs.properties.minecraft_version
+        )
     }
 }
 

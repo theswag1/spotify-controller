@@ -26,9 +26,12 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
@@ -65,7 +68,7 @@ public class SpotifyControllerClient implements ClientModInitializer {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
-        authService = new SpotifyAuthService(config, httpClient, Blaze3D::openUri);
+        authService = new SpotifyAuthService(config, httpClient, SpotifyControllerClient::openBrowserUri);
         apiClient = new SpotifyApiClient(authService, httpClient);
         poller = new SpotifyPoller(config, apiClient);
         poller.start();
@@ -80,44 +83,45 @@ public class SpotifyControllerClient implements ClientModInitializer {
         KeyMapping.Category category = KeyMapping.Category.register(
                 Identifier.fromNamespaceAndPath(MOD_ID, "main")
         );
+        InputConstants.Type keyboardType = getKeyboardInputType();
         openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spotify_controller.open_config",
-                InputConstants.Type.KEYBOARD,
+                keyboardType,
                 InputConstants.KEY_O,
                 category,
                 1
         ));
         openControllerKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spotify_controller.open_controller",
-                InputConstants.Type.KEYBOARD,
+                keyboardType,
                 InputConstants.KEY_Z,
                 category,
                 2
         ));
         toggleHudKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spotify_controller.toggle_hud",
-                InputConstants.Type.KEYBOARD,
+                keyboardType,
                 InputConstants.KEY_BACKSLASH,
                 category,
                 3
         ));
         playPauseKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spotify_controller.play_pause",
-                InputConstants.Type.KEYBOARD,
+                keyboardType,
                 InputConstants.KEY_K,
                 category,
                 4
         ));
         nextTrackKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spotify_controller.next_track",
-                InputConstants.Type.KEYBOARD,
+                keyboardType,
                 InputConstants.KEY_RBRACKET,
                 category,
                 5
         ));
         prevTrackKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spotify_controller.prev_track",
-                InputConstants.Type.KEYBOARD,
+                keyboardType,
                 InputConstants.KEY_LBRACKET,
                 category,
                 6
@@ -180,7 +184,37 @@ public class SpotifyControllerClient implements ClientModInitializer {
         });
 
         registerClientCommands();
-        LOGGER.info("Spotify Controller initialized for Minecraft 26.3");
+        LOGGER.info("Spotify Controller initialized");
+    }
+
+    /**
+     * Opens a URI in the system browser across both Minecraft 26.3 ({@code Blaze3D.openUri})
+     * and Minecraft 26.2 ({@code Util.getPlatform().openUri}).
+     */
+    public static void openBrowserUri(URI uri) {
+        try {
+            Method blazeOpenUri = Blaze3D.class.getMethod("openUri", URI.class);
+            blazeOpenUri.invoke(null, uri);
+            return;
+        } catch (ReflectiveOperationException ignored) {
+            // Minecraft 26.2 uses Util.getPlatform().openUri(URI)
+        }
+        try {
+            Object platform = Util.getPlatform();
+            Method utilOpenUri = platform.getClass().getMethod("openUri", URI.class);
+            utilOpenUri.invoke(platform, uri);
+        } catch (ReflectiveOperationException e) {
+            LOGGER.error("Failed to open browser URI {}", uri, e);
+        }
+    }
+
+    private static InputConstants.Type getKeyboardInputType() {
+        for (InputConstants.Type type : InputConstants.Type.values()) {
+            if (type.name().equals("KEYBOARD") || type.name().equals("KEYSYM")) {
+                return type;
+            }
+        }
+        return InputConstants.Type.values()[0];
     }
 
     public static SpotifyConfig getConfig() {
