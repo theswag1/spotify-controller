@@ -49,7 +49,7 @@ public class SpotifyConfigScreen extends Screen {
     @Override
     protected void init() {
         int left = (this.width - CONTENT_WIDTH) / 2;
-        int top = Math.max(36, (this.height - 216) / 2);
+        int top = Math.max(30, (this.height - 238) / 2);
 
         String previousInput = clientIdBox != null
                 ? clientIdBox.getValue()
@@ -83,18 +83,29 @@ public class SpotifyConfigScreen extends Screen {
                 ).bounds(left + HALF_BUTTON_WIDTH + BUTTON_GAP, top + 72, HALF_BUTTON_WIDTH, 20).build()
         );
 
+        addRenderableWidget(
+                Button.builder(
+                        getHudToggleLabel(),
+                        button -> {
+                            config.hudEnabled = !config.hudEnabled;
+                            config.save();
+                            button.setMessage(getHudToggleLabel());
+                        }
+                ).bounds(left, top + 98, HALF_BUTTON_WIDTH, 20).build()
+        );
+
         disconnectButton = addRenderableWidget(
                 Button.builder(
                         Component.translatable("screen.spotify_controller.config.disconnect"),
                         button -> disconnect()
-                ).bounds(left, top + 98, HALF_BUTTON_WIDTH, 20).build()
+                ).bounds(left + HALF_BUTTON_WIDTH + BUTTON_GAP, top + 98, HALF_BUTTON_WIDTH, 20).build()
         );
 
         addRenderableWidget(
                 Button.builder(
                         Component.translatable("screen.spotify_controller.config.done"),
                         button -> onClose()
-                ).bounds(left + HALF_BUTTON_WIDTH + BUTTON_GAP, top + 98, HALF_BUTTON_WIDTH, 20).build()
+                ).bounds(left, top + 124, CONTENT_WIDTH, 20).build()
         );
 
         updateButtonStates();
@@ -105,7 +116,7 @@ public class SpotifyConfigScreen extends Screen {
         super.extractRenderState(guiGraphics, mouseX, mouseY, partialTick);
 
         int left = (this.width - CONTENT_WIDTH) / 2;
-        int top = Math.max(36, (this.height - 216) / 2);
+        int top = Math.max(30, (this.height - 238) / 2);
 
         guiGraphics.centeredText(this.font, this.title, this.width / 2, top - 16, 0xFFFFFFFF);
         guiGraphics.text(
@@ -123,7 +134,7 @@ public class SpotifyConfigScreen extends Screen {
                 0xFFA0A0A0
         );
 
-        int cardTop = top + 130;
+        int cardTop = top + 152;
         int cardBottom = cardTop + 82;
         guiGraphics.fill(left, cardTop, left + CONTENT_WIDTH, cardBottom, 0xAA181818);
         guiGraphics.outline(left, cardTop, CONTENT_WIDTH, cardBottom - cardTop, 0xFF333333);
@@ -222,6 +233,14 @@ public class SpotifyConfigScreen extends Screen {
         if (!enteredId.equals(config.clientId)) {
             config.setClientId(enteredId);
         }
+    }
+
+    private Component getHudToggleLabel() {
+        return Component.translatable(
+                config.hudEnabled
+                        ? "screen.spotify_controller.config.hud_on"
+                        : "screen.spotify_controller.config.hud_off"
+        );
     }
 
     private void updateButtonStates() {

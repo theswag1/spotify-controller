@@ -3,14 +3,22 @@ package com.noah.spotifycontroller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.noah.spotifycontroller.hud.AlbumArtManager;
+import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpotifyAuthAndConfigTest {
@@ -105,5 +113,35 @@ class SpotifyAuthAndConfigTest {
         assertEquals("context", track.repeatState());
         assertEquals("1:05", TrackState.formatDuration(track.getInterpolatedProgressMs()));
         assertEquals("3:35", TrackState.formatDuration(track.durationMs()));
+    }
+
+    @Test
+    void decodesPngAndJpegAlbumArtBytes() throws IOException {
+        BufferedImage sample = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                sample.setRGB(x, y, new Color(29, 185, 84).getRGB());
+            }
+        }
+
+        for (String format : new String[]{"png", "jpg"}) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            assertTrue(ImageIO.write(sample, format, out));
+
+            BufferedImage decoded = AlbumArtManager.decodeImageBytes(out.toByteArray());
+            assertNotNull(decoded, "Failed to decode " + format + " image bytes");
+            assertEquals(8, decoded.getWidth());
+            assertEquals(8, decoded.getHeight());
+        }
+    }
+
+    @Test
+    void computesMarqueeScrollOffsetsCorrectly() {
+        assertEquals(0, SpotifyHudOverlay.computeScrollOffset(100, 136, 5000L));
+        assertEquals(0, SpotifyHudOverlay.computeScrollOffset(180, 136, 0L));
+
+        int midOffset = SpotifyHudOverlay.computeScrollOffset(184, 136, 2500L);
+        assertEquals(24, midOffset);
+        assertEquals(48, SpotifyHudOverlay.computeScrollOffset(184, 136, 4000L));
     }
 }

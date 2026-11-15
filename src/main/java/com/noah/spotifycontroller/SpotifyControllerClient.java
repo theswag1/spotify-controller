@@ -9,12 +9,15 @@ import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.gui.SpotifyConfigScreen;
+import com.noah.spotifycontroller.hud.AlbumArtManager;
+import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -38,6 +41,8 @@ public class SpotifyControllerClient implements ClientModInitializer {
     private static SpotifyAuthService authService;
     private static SpotifyApiClient apiClient;
     private static SpotifyPoller poller;
+    private static AlbumArtManager albumArtManager;
+    private static SpotifyHudOverlay hudOverlay;
 
     private static KeyMapping openConfigKey;
     private static volatile boolean pendingOpenConfigScreen = false;
@@ -52,6 +57,13 @@ public class SpotifyControllerClient implements ClientModInitializer {
         apiClient = new SpotifyApiClient(authService, httpClient);
         poller = new SpotifyPoller(config, apiClient);
         poller.start();
+
+        albumArtManager = new AlbumArtManager(httpClient);
+        hudOverlay = new SpotifyHudOverlay(config, poller, albumArtManager);
+        HudElementRegistry.addLast(
+                Identifier.fromNamespaceAndPath(MOD_ID, "now_playing_hud"),
+                hudOverlay
+        );
 
         KeyMapping.Category category = KeyMapping.Category.register(
                 Identifier.fromNamespaceAndPath(MOD_ID, "main")
@@ -75,6 +87,9 @@ public class SpotifyControllerClient implements ClientModInitializer {
         });
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            if (albumArtManager != null) {
+                albumArtManager.clear();
+            }
             if (poller != null) {
                 poller.stop();
             }
@@ -180,6 +195,16 @@ public class SpotifyControllerClient implements ClientModInitializer {
                                 .executes(context -> runPlaybackCommand(context.getSource().getClient(), apiClient.nextTrack())))
                         .then(ClientCommands.literal("prev")
                                 .executes(context -> runPlaybackCommand(context.getSource().getClient(), apiClient.previousTrack())))
+                        .then(ClientCommands.literal("hud")
+                                .executes(context -> {
+                                    config.hudEnabled = !config.hudEnabled;
+                                    config.save();
+                                    context.getSource().sendFeedback(
+                                            Component.literal("[Spotify] In-game HUD widget " + (config.hudEnabled ? "enabled." : "disabled."))
+                                                    .withStyle(config.hudEnabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
+                                    );
+                                    return 1;
+                                }))
         ));
     }
 
