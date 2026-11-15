@@ -9,6 +9,7 @@ import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
+import com.noah.spotifycontroller.util.MinecraftGuiCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -138,7 +139,7 @@ public class SpotifyControllerScreen extends Screen {
                         Component.translatable("screen.spotify_controller.controller.open_config"),
                         button -> {
                             Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
-                            client.gui.setScreen(new SpotifyConfigScreen(this, config, authService, poller, hudOverlay));
+                            MinecraftGuiCompat.setScreen(client, new SpotifyConfigScreen(this, config, authService, poller, hudOverlay));
                         }
                 ).bounds(left + 127, top + 174, 120, 20).build()
         );
@@ -228,7 +229,7 @@ public class SpotifyControllerScreen extends Screen {
     public void onClose() {
         this.draggingVolume = false;
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
-        client.gui.setScreen(this.parent);
+        MinecraftGuiCompat.setScreen(client, this.parent);
     }
 
     private void renderNowPlayingCard(

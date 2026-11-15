@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +56,7 @@ public class SpotifyAuthService {
 
     private final Object serverLock = new Object();
     private HttpServer activeCallbackServer;
+    private HttpServer activeIpv6CallbackServer;
     private ExecutorService activeCallbackExecutor;
     private CompletableFuture<Boolean> activeAuthFuture;
 
@@ -118,7 +120,8 @@ public class SpotifyAuthService {
         String redirectUri;
         synchronized (config) {
             clientId = config.clientId;
-            port = config.callbackPort;
+            int configuredPort = config.callbackPort;
+            port = (configuredPort <= 0 || configuredPort > 65535) ? 8888 : configuredPort;
             redirectUri = config.getRedirectUri();
         }
 
@@ -129,9 +132,12 @@ public class SpotifyAuthService {
         CompletableFuture<Boolean> resultFuture = new CompletableFuture<>();
         AtomicBoolean handled = new AtomicBoolean(false);
 
-        HttpServer server;
+        HttpServer ipv4Server;
         try {
-            server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
+            // Bind explicitly to IPv4 127.0.0.1 because dual-stack flags (e.g. NeoForge's
+            // preferIPv6Addresses=true) cause InetAddress.getLoopbackAddress() to return ::1,
+            // leaving http://127.0.0.1:<port>/callback unreachable from the browser.
+            ipv4Server = HttpServer.create(new InetSocketAddress(loopbackIpv4Address(), port), 0);
         } catch (IOException e) {
             String message = "Failed to start local callback server on port " + port + ": " + e.getMessage();
             LOGGER.error(message, e);
@@ -139,7 +145,7 @@ public class SpotifyAuthService {
             return CompletableFuture.completedFuture(false);
         }
 
-        server.createContext("/callback", exchange -> {
+        HttpHandler callbackHandler = exchange -> {
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendHtmlResponse(exchange, 405, "Method Not Allowed", "Invalid HTTP method.");
                 return;
@@ -155,7 +161,7 @@ public class SpotifyAuthService {
                 String msg = "Spotify authorization failed: " + error;
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
                         "Authorization was cancelled or denied (" + escapeHtml(error) + "). You can close this tab.");
-                scheduleServerStop(server);
+                scheduleServerStop(ipv4Server);
                 notify.accept(msg);
                 resultFuture.complete(false);
                 return;
@@ -167,7 +173,7 @@ public class SpotifyAuthService {
                 String msg = "Spotify callback rejected due to mismatched OAuth state.";
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
                         "Invalid OAuth state parameter. Please try connecting again from Minecraft.");
-                scheduleServerStop(server);
+                scheduleServerStop(ipv4Server);
                 notify.accept(msg);
                 resultFuture.complete(false);
                 return;
@@ -177,7 +183,7 @@ public class SpotifyAuthService {
                 String msg = "Spotify callback did not include an authorization code.";
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
                         "Missing authorization code in callback. Please try again.");
-                scheduleServerStop(server);
+                scheduleServerStop(ipv4Server);
                 notify.accept(msg);
                 resultFuture.complete(false);
                 return;
@@ -185,7 +191,7 @@ public class SpotifyAuthService {
 
             sendHtmlResponse(exchange, 200, "Spotify Connected",
                     "Authorization received! Exchanging token... You can return to Minecraft now.");
-            scheduleServerStop(server);
+            scheduleServerStop(ipv4Server);
             notify.accept("Exchanging authorization code for Spotify tokens...");
 
             exchangeCodeForTokens(clientId, code, redirectUri, codeVerifier)
@@ -202,18 +208,39 @@ public class SpotifyAuthService {
                             resultFuture.complete(false);
                         }
                     });
-        });
+        };
 
         ExecutorService callbackExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "spotify-oauth-callback");
             t.setDaemon(true);
             return t;
         });
-        server.setExecutor(callbackExecutor);
-        server.start();
+
+        ipv4Server.createContext("/callback", callbackHandler);
+        ipv4Server.setExecutor(callbackExecutor);
+        ipv4Server.start();
+        LOGGER.info("Spotify OAuth callback server listening on 127.0.0.1:{}", port);
+
+        HttpServer ipv6Server = null;
+        try {
+            HttpServer candidateIpv6 = HttpServer.create(new InetSocketAddress(loopbackIpv6Address(), port), 0);
+            try {
+                candidateIpv6.createContext("/callback", callbackHandler);
+                candidateIpv6.setExecutor(callbackExecutor);
+                candidateIpv6.start();
+                ipv6Server = candidateIpv6;
+                LOGGER.info("Spotify OAuth callback server also listening on [::1]:{}", port);
+            } catch (RuntimeException e) {
+                candidateIpv6.stop(0);
+                LOGGER.debug("Failed to initialize optional IPv6 loopback listener on [::1]:{}", port, e);
+            }
+        } catch (IOException e) {
+            LOGGER.debug("Optional IPv6 loopback listener on [::1]:{} unavailable: {}", port, e.getMessage());
+        }
 
         synchronized (serverLock) {
-            this.activeCallbackServer = server;
+            this.activeCallbackServer = ipv4Server;
+            this.activeIpv6CallbackServer = ipv6Server;
             this.activeCallbackExecutor = callbackExecutor;
             this.activeAuthFuture = resultFuture;
         }
@@ -221,7 +248,7 @@ public class SpotifyAuthService {
         // Automatically tear down the temporary listener if the user never finishes in-browser auth.
         cleanupExecutor.schedule(() -> {
             if (handled.compareAndSet(false, true) && !resultFuture.isDone()) {
-                stopCallbackServerIfMatches(server);
+                stopCallbackServerIfMatches(ipv4Server);
                 notify.accept("Spotify login timed out after 3 minutes.");
                 resultFuture.complete(false);
             }
@@ -233,7 +260,7 @@ public class SpotifyAuthService {
             browserOpener.accept(URI.create(authUrl));
         } catch (Exception e) {
             LOGGER.error("Could not open browser for Spotify login", e);
-            stopCallbackServerIfMatches(server);
+            stopCallbackServerIfMatches(ipv4Server);
             notify.accept("Could not open browser automatically: " + e.getMessage());
             resultFuture.complete(false);
         }
@@ -394,14 +421,7 @@ public class SpotifyAuthService {
 
     private void stopCallbackServer() {
         synchronized (serverLock) {
-            if (activeCallbackServer != null) {
-                activeCallbackServer.stop(0);
-                activeCallbackServer = null;
-            }
-            if (activeCallbackExecutor != null) {
-                activeCallbackExecutor.shutdownNow();
-                activeCallbackExecutor = null;
-            }
+            stopCallbackServersLocked();
             if (activeAuthFuture != null && !activeAuthFuture.isDone()) {
                 activeAuthFuture.complete(false);
             }
@@ -412,18 +432,47 @@ public class SpotifyAuthService {
     private void stopCallbackServerIfMatches(HttpServer server) {
         synchronized (serverLock) {
             if (activeCallbackServer == server) {
-                activeCallbackServer.stop(0);
-                activeCallbackServer = null;
-                if (activeCallbackExecutor != null) {
-                    activeCallbackExecutor.shutdownNow();
-                    activeCallbackExecutor = null;
-                }
+                stopCallbackServersLocked();
             }
+        }
+    }
+
+    private void stopCallbackServersLocked() {
+        if (activeCallbackServer != null) {
+            activeCallbackServer.stop(0);
+            activeCallbackServer = null;
+        }
+        if (activeIpv6CallbackServer != null) {
+            activeIpv6CallbackServer.stop(0);
+            activeIpv6CallbackServer = null;
+        }
+        if (activeCallbackExecutor != null) {
+            activeCallbackExecutor.shutdownNow();
+            activeCallbackExecutor = null;
         }
     }
 
     private void scheduleServerStop(HttpServer server) {
         cleanupExecutor.schedule(() -> stopCallbackServerIfMatches(server), 1, TimeUnit.SECONDS);
+    }
+
+    private static InetAddress loopbackIpv4Address() {
+        try {
+            return InetAddress.getByAddress("127.0.0.1", new byte[]{127, 0, 0, 1});
+        } catch (IOException e) {
+            throw new IllegalStateException("Invalid IPv4 loopback address", e);
+        }
+    }
+
+    private static InetAddress loopbackIpv6Address() {
+        try {
+            return InetAddress.getByAddress(
+                    "localhost",
+                    new byte[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+            );
+        } catch (IOException e) {
+            throw new IllegalStateException("Invalid IPv6 loopback address", e);
+        }
     }
 
     private static String buildAuthorizeUrl(String clientId, String redirectUri, String codeChallenge, String state) {

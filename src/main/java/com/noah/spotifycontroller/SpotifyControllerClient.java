@@ -2,8 +2,6 @@ package com.noah.spotifycontroller;
 
 import com.mojang.blaze3d.Blaze3D;
 import com.mojang.blaze3d.platform.InputConstants;
-import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import com.noah.spotifycontroller.api.SpotifyApiClient;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
@@ -14,16 +12,11 @@ import com.noah.spotifycontroller.gui.SpotifyControllerScreen;
 import com.noah.spotifycontroller.gui.SpotifySetupGuideScreen;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import com.noah.spotifycontroller.util.MinecraftGuiCompat;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
@@ -37,11 +30,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 
 /**
- * Client entrypoint for the Spotify Controller Fabric mod.
+ * Shared loader-agnostic client core for the Spotify Controller mod.
+ * Mod-loader entrypoints initialize this core and forward lifecycle, keybind,
+ * HUD rendering, tick, and client command events.
  */
-public class SpotifyControllerClient implements ClientModInitializer {
+public class SpotifyControllerClient {
     public static final String MOD_ID = "spotify_controller";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
@@ -64,8 +61,10 @@ public class SpotifyControllerClient implements ClientModInitializer {
     private static volatile boolean pendingOpenSetupScreen = false;
     private static boolean wasInWorld = false;
 
-    @Override
-    public void onInitializeClient() {
+    /**
+     * Initializes config, HTTP/Spotify API clients, background poller, and HUD renderer.
+     */
+    public static void initCore() {
         config = SpotifyConfig.get();
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
@@ -77,91 +76,123 @@ public class SpotifyControllerClient implements ClientModInitializer {
 
         albumArtManager = new AlbumArtManager(httpClient);
         hudOverlay = new SpotifyHudOverlay(config, poller, albumArtManager);
-        HudElementRegistry.addLast(
-                Identifier.fromNamespaceAndPath(MOD_ID, "now_playing_hud"),
-                hudOverlay
-        );
+        LOGGER.info("Spotify Controller initialized");
+    }
 
-        KeyMapping.Category category = KeyMapping.Category.register(
-                Identifier.fromNamespaceAndPath(MOD_ID, "main")
-        );
+    /**
+     * Creates and registers the keybind category in vanilla's sort list (used on Fabric).
+     */
+    public static KeyMapping.Category createKeyCategory() {
+        return KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
+    }
+
+    /**
+     * Creates an unregistered keybind category for loaders that manage category registration via event (NeoForge).
+     */
+    public static KeyMapping.Category createUnregisteredKeyCategory() {
+        return new KeyMapping.Category(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
+    }
+
+    /**
+     * Instantiates and registers all Spotify Controller keybinds using the loader-supplied registrar.
+     */
+    public static void registerKeyMappings(
+            KeyMapping.Category category,
+            UnaryOperator<KeyMapping> registrar
+    ) {
         InputConstants.Type keyboardType = getKeyboardInputType();
-        openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        openConfigKey = registrar.apply(new KeyMapping(
                 "key.spotify_controller.open_config",
                 keyboardType,
                 InputConstants.KEY_O,
                 category,
                 1
         ));
-        openControllerKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        openControllerKey = registrar.apply(new KeyMapping(
                 "key.spotify_controller.open_controller",
                 keyboardType,
                 InputConstants.KEY_Z,
                 category,
                 2
         ));
-        toggleHudKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        toggleHudKey = registrar.apply(new KeyMapping(
                 "key.spotify_controller.toggle_hud",
                 keyboardType,
                 InputConstants.KEY_BACKSLASH,
                 category,
                 3
         ));
-        playPauseKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        playPauseKey = registrar.apply(new KeyMapping(
                 "key.spotify_controller.play_pause",
                 keyboardType,
                 InputConstants.KEY_K,
                 category,
                 4
         ));
-        nextTrackKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        nextTrackKey = registrar.apply(new KeyMapping(
                 "key.spotify_controller.next_track",
                 keyboardType,
                 InputConstants.KEY_RBRACKET,
                 category,
                 5
         ));
-        prevTrackKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        prevTrackKey = registrar.apply(new KeyMapping(
                 "key.spotify_controller.prev_track",
                 keyboardType,
                 InputConstants.KEY_LBRACKET,
                 category,
                 6
         ));
+    }
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            checkSetupPromptOnWorldJoin(client);
+    /**
+     * Handles world-join setup prompts, deferred command screens, and keybind presses every client tick.
+     */
+    public static void onClientTick(Minecraft client) {
+        checkSetupPromptOnWorldJoin(client);
 
-            if (pendingOpenControllerScreen) {
-                pendingOpenControllerScreen = false;
-                openControllerScreen(client);
-                return;
-            }
-            if (pendingOpenConfigScreen) {
-                pendingOpenConfigScreen = false;
-                openConfigScreen(client);
-                return;
-            }
-            if (pendingOpenSetupScreen) {
-                pendingOpenSetupScreen = false;
-                openSetupGuideScreen(client);
-                return;
-            }
+        if (pendingOpenControllerScreen) {
+            pendingOpenControllerScreen = false;
+            openControllerScreen(client);
+            return;
+        }
+        if (pendingOpenConfigScreen) {
+            pendingOpenConfigScreen = false;
+            openConfigScreen(client);
+            return;
+        }
+        if (pendingOpenSetupScreen) {
+            pendingOpenSetupScreen = false;
+            openSetupGuideScreen(client);
+            return;
+        }
+
+        if (openControllerKey != null) {
             while (openControllerKey.consumeClick()) {
                 openControllerScreen(client);
             }
+        }
+        if (openConfigKey != null) {
             while (openConfigKey.consumeClick()) {
                 openConfigScreen(client);
             }
+        }
+        if (playPauseKey != null) {
             while (playPauseKey.consumeClick()) {
                 runKeybindPlaybackAction(client, apiClient.togglePlayPause(poller.getCurrentTrack()));
             }
+        }
+        if (prevTrackKey != null) {
             while (prevTrackKey.consumeClick()) {
                 runKeybindPlaybackAction(client, apiClient.previousTrack());
             }
+        }
+        if (nextTrackKey != null) {
             while (nextTrackKey.consumeClick()) {
                 runKeybindPlaybackAction(client, apiClient.nextTrack());
             }
+        }
+        if (toggleHudKey != null) {
             while (toggleHudKey.consumeClick()) {
                 config.hudEnabled = !config.hudEnabled;
                 config.save();
@@ -171,22 +202,32 @@ public class SpotifyControllerClient implements ClientModInitializer {
                         config.hudEnabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW
                 );
             }
-        });
+        }
+    }
 
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-            if (albumArtManager != null) {
-                albumArtManager.clear();
-            }
-            if (poller != null) {
-                poller.stop();
-            }
-            if (authService != null) {
-                authService.shutdown();
-            }
-        });
+    /**
+     * Releases album art textures, poller threads, and OAuth server resources on client shutdown.
+     */
+    public static void onClientStopping() {
+        if (albumArtManager != null) {
+            albumArtManager.clear();
+        }
+        if (poller != null) {
+            poller.stop();
+        }
+        if (authService != null) {
+            authService.shutdown();
+        }
+    }
 
-        registerClientCommands();
-        LOGGER.info("Spotify Controller initialized");
+    /**
+     * Builds the configuration screen (or first-time setup wizard when unconfigured) for mod menus.
+     */
+    public static Screen createConfigScreen(Screen parent) {
+        if (!config.hasClientId()) {
+            return new SpotifySetupGuideScreen(parent, config, authService, poller, hudOverlay);
+        }
+        return new SpotifyConfigScreen(parent, config, authService, poller, hudOverlay);
     }
 
     /**
@@ -250,10 +291,124 @@ public class SpotifyControllerClient implements ClientModInitializer {
         return hudOverlay;
     }
 
+    public static int requestOpenControllerScreen() {
+        pendingOpenControllerScreen = true;
+        return 1;
+    }
+
+    public static int requestOpenConfigScreen() {
+        pendingOpenConfigScreen = true;
+        return 1;
+    }
+
+    public static int requestOpenSetupScreen() {
+        pendingOpenSetupScreen = true;
+        return 1;
+    }
+
+    public static int executeSetClientIdCommand(
+            String rawId,
+            Consumer<Component> sendFeedback,
+            Consumer<Component> sendError
+    ) {
+        String id = rawId == null ? "" : rawId.trim();
+        if (id.isEmpty()) {
+            sendError.accept(Component.literal("[Spotify] Client ID cannot be empty."));
+            return 0;
+        }
+        config.setClientId(id);
+        sendFeedback.accept(
+                Component.literal("[Spotify] Saved Client ID. Run /spotify login to connect.")
+                        .withStyle(ChatFormatting.GREEN)
+        );
+        return 1;
+    }
+
+    public static int executeLoginCommand(Minecraft client) {
+        authService.startAuthFlow(msg -> sendClientMessage(client, msg, false))
+                .whenComplete((ok, ex) -> {
+                    if (Boolean.TRUE.equals(ok)) {
+                        poller.refreshNow();
+                    }
+                });
+        return 1;
+    }
+
+    public static int executeStatusCommand(Consumer<Component> sendFeedback) {
+        boolean connected = config.hasValidAccessToken() || config.hasRefreshToken();
+        TrackState track = poller.getCurrentTrack();
+        StringBuilder summary = new StringBuilder();
+        summary.append(connected ? "Connected" : "Not connected");
+        if (!config.hasClientId()) {
+            summary.append(" (Client ID not set)");
+        }
+        if (track != null) {
+            summary.append(" | ")
+                    .append(track.isPlaying() ? "Playing: " : "Paused: ")
+                    .append(track.trackName())
+                    .append(" - ")
+                    .append(track.artistName())
+                    .append(" [")
+                    .append(TrackState.formatDuration(track.getInterpolatedProgressMs()))
+                    .append(" / ")
+                    .append(TrackState.formatDuration(track.durationMs()))
+                    .append("]");
+        } else {
+            summary.append(" | ").append(poller.getLastStatusMessage());
+        }
+        sendFeedback.accept(
+                Component.literal("[Spotify] " + summary)
+                        .withStyle(connected ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
+        );
+        return 1;
+    }
+
+    public static int executePlayCommand(Minecraft client) {
+        return runPlaybackCommand(client, apiClient.play());
+    }
+
+    public static int executePauseCommand(Minecraft client) {
+        return runPlaybackCommand(client, apiClient.pause());
+    }
+
+    public static int executeNextCommand(Minecraft client) {
+        return runPlaybackCommand(client, apiClient.nextTrack());
+    }
+
+    public static int executePrevCommand(Minecraft client) {
+        return runPlaybackCommand(client, apiClient.previousTrack());
+    }
+
+    public static int executeVolumeCommand(Minecraft client, int percent) {
+        return runPlaybackCommand(client, apiClient.setVolume(percent));
+    }
+
+    public static int executeShuffleCommand(Minecraft client) {
+        TrackState track = poller.getCurrentTrack();
+        boolean nextShuffle = track == null || !track.shuffleState();
+        return runPlaybackCommand(client, apiClient.setShuffle(nextShuffle));
+    }
+
+    public static int executeRepeatCommand(Minecraft client) {
+        TrackState track = poller.getCurrentTrack();
+        String nextRepeat = SpotifyApiClient.nextRepeatState(track != null ? track.repeatState() : "off");
+        return runPlaybackCommand(client, apiClient.setRepeatMode(nextRepeat));
+    }
+
+    public static int executeHudCommand(Consumer<Component> sendFeedback) {
+        config.hudEnabled = !config.hudEnabled;
+        config.save();
+        sendFeedback.accept(
+                Component.literal("[Spotify] In-game HUD widget " + (config.hudEnabled ? "enabled." : "disabled."))
+                        .withStyle(config.hudEnabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
+        );
+        return 1;
+    }
+
     private static void checkSetupPromptOnWorldJoin(Minecraft client) {
         boolean inWorld = client.player != null && client.level != null;
         if (inWorld && !wasInWorld && !config.hasClientId()) {
-            String keyName = openConfigKey.getTranslatedKeyMessage().getString();
+            String keyName = openConfigKey != null ? openConfigKey.getTranslatedKeyMessage().getString() : "O";
             client.player.sendSystemMessage(
                     Component.literal("[Spotify] Not set up yet! Press [" + keyName + "] or run /spotify setup for the first-time setup guide.")
                             .withStyle(ChatFormatting.YELLOW)
@@ -267,8 +422,8 @@ public class SpotifyControllerClient implements ClientModInitializer {
             openSetupGuideScreen(client);
             return;
         }
-        client.gui.setScreen(new SpotifyControllerScreen(
-                client.gui.screen(),
+        MinecraftGuiCompat.setScreen(client, new SpotifyControllerScreen(
+                MinecraftGuiCompat.getScreen(client),
                 config,
                 authService,
                 apiClient,
@@ -279,138 +434,16 @@ public class SpotifyControllerClient implements ClientModInitializer {
     }
 
     private static void openConfigScreen(Minecraft client) {
-        if (!config.hasClientId()) {
-            openSetupGuideScreen(client);
-            return;
-        }
-        client.gui.setScreen(new SpotifyConfigScreen(client.gui.screen(), config, authService, poller, hudOverlay));
+        MinecraftGuiCompat.setScreen(client, createConfigScreen(MinecraftGuiCompat.getScreen(client)));
     }
 
     private static void openSetupGuideScreen(Minecraft client) {
-        client.gui.setScreen(new SpotifySetupGuideScreen(
-                client.gui.screen(),
+        MinecraftGuiCompat.setScreen(client, new SpotifySetupGuideScreen(
+                MinecraftGuiCompat.getScreen(client),
                 config,
                 authService,
                 poller,
                 hudOverlay
-        ));
-    }
-
-    private static void registerClientCommands() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
-                ClientCommands.literal("spotify")
-                        .executes(context -> {
-                            pendingOpenControllerScreen = true;
-                            return 1;
-                        })
-                        .then(ClientCommands.literal("player")
-                                .executes(context -> {
-                                    pendingOpenControllerScreen = true;
-                                    return 1;
-                                }))
-                        .then(ClientCommands.literal("config")
-                                .executes(context -> {
-                                    pendingOpenConfigScreen = true;
-                                    return 1;
-                                }))
-                        .then(ClientCommands.literal("setup")
-                                .executes(context -> {
-                                    pendingOpenSetupScreen = true;
-                                    return 1;
-                                }))
-                        .then(ClientCommands.literal("clientid")
-                                .then(ClientCommands.argument("id", StringArgumentType.greedyString())
-                                        .executes(context -> {
-                                            String id = StringArgumentType.getString(context, "id").trim();
-                                            if (id.isEmpty()) {
-                                                context.getSource().sendError(
-                                                        Component.literal("[Spotify] Client ID cannot be empty.")
-                                                );
-                                                return 0;
-                                            }
-                                            config.setClientId(id);
-                                            context.getSource().sendFeedback(
-                                                    Component.literal("[Spotify] Saved Client ID. Run /spotify login to connect.")
-                                                            .withStyle(ChatFormatting.GREEN)
-                                            );
-                                            return 1;
-                                        })))
-                        .then(ClientCommands.literal("login")
-                                .executes(context -> {
-                                    Minecraft client = context.getSource().getClient();
-                                    authService.startAuthFlow(msg -> sendClientMessage(client, msg, false))
-                                            .whenComplete((ok, ex) -> {
-                                                if (Boolean.TRUE.equals(ok)) {
-                                                    poller.refreshNow();
-                                                }
-                                            });
-                                    return 1;
-                                }))
-                        .then(ClientCommands.literal("status")
-                                .executes(context -> {
-                                    boolean connected = config.hasValidAccessToken() || config.hasRefreshToken();
-                                    TrackState track = poller.getCurrentTrack();
-                                    StringBuilder summary = new StringBuilder();
-                                    summary.append(connected ? "Connected" : "Not connected");
-                                    if (!config.hasClientId()) {
-                                        summary.append(" (Client ID not set)");
-                                    }
-                                    if (track != null) {
-                                        summary.append(" | ")
-                                                .append(track.isPlaying() ? "Playing: " : "Paused: ")
-                                                .append(track.trackName())
-                                                .append(" - ")
-                                                .append(track.artistName())
-                                                .append(" [")
-                                                .append(TrackState.formatDuration(track.getInterpolatedProgressMs()))
-                                                .append(" / ")
-                                                .append(TrackState.formatDuration(track.durationMs()))
-                                                .append("]");
-                                    } else {
-                                        summary.append(" | ").append(poller.getLastStatusMessage());
-                                    }
-                                    context.getSource().sendFeedback(
-                                            Component.literal("[Spotify] " + summary)
-                                                    .withStyle(connected ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
-                                    );
-                                    return 1;
-                                }))
-                        .then(ClientCommands.literal("play")
-                                .executes(context -> runPlaybackCommand(context.getSource().getClient(), apiClient.play())))
-                        .then(ClientCommands.literal("pause")
-                                .executes(context -> runPlaybackCommand(context.getSource().getClient(), apiClient.pause())))
-                        .then(ClientCommands.literal("next")
-                                .executes(context -> runPlaybackCommand(context.getSource().getClient(), apiClient.nextTrack())))
-                        .then(ClientCommands.literal("prev")
-                                .executes(context -> runPlaybackCommand(context.getSource().getClient(), apiClient.previousTrack())))
-                        .then(ClientCommands.literal("volume")
-                                .then(ClientCommands.argument("percent", IntegerArgumentType.integer(0, 100))
-                                        .executes(context -> {
-                                            int percent = IntegerArgumentType.getInteger(context, "percent");
-                                            return runPlaybackCommand(context.getSource().getClient(), apiClient.setVolume(percent));
-                                        })))
-                        .then(ClientCommands.literal("shuffle")
-                                .executes(context -> {
-                                    TrackState track = poller.getCurrentTrack();
-                                    boolean nextShuffle = track == null || !track.shuffleState();
-                                    return runPlaybackCommand(context.getSource().getClient(), apiClient.setShuffle(nextShuffle));
-                                }))
-                        .then(ClientCommands.literal("repeat")
-                                .executes(context -> {
-                                    TrackState track = poller.getCurrentTrack();
-                                    String nextRepeat = SpotifyApiClient.nextRepeatState(track != null ? track.repeatState() : "off");
-                                    return runPlaybackCommand(context.getSource().getClient(), apiClient.setRepeatMode(nextRepeat));
-                                }))
-                        .then(ClientCommands.literal("hud")
-                                .executes(context -> {
-                                    config.hudEnabled = !config.hudEnabled;
-                                    config.save();
-                                    context.getSource().sendFeedback(
-                                            Component.literal("[Spotify] In-game HUD widget " + (config.hudEnabled ? "enabled." : "disabled."))
-                                                    .withStyle(config.hudEnabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
-                                    );
-                                    return 1;
-                                }))
         ));
     }
 

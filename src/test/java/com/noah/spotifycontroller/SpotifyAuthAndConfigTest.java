@@ -15,10 +15,19 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -289,5 +298,38 @@ class SpotifyAuthAndConfigTest {
         assertEquals("Minecraft Audio Network", episode.artistName());
         assertEquals("https://i.scdn.co/image/ep300", episode.albumArtUrl());
         assertTrue(episode.isPlaying());
+    }
+
+    @Test
+    void callbackServerAcceptsExplicitIpv4Connections(@TempDir Path tempDir) throws Exception {
+        int freePort;
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByAddress(new byte[]{127, 0, 0, 1}))) {
+            freePort = socket.getLocalPort();
+        }
+
+        Path configPath = tempDir.resolve("auth_callback_test.json");
+        SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
+        config.callbackPort = freePort;
+        config.setClientId("test-client-id");
+
+        HttpClient client = HttpClient.newHttpClient();
+        SpotifyAuthService authService = new SpotifyAuthService(config, client, uri -> {});
+        try {
+            CompletableFuture<Boolean> authFuture = authService.startAuthFlow(msg -> {});
+            assertFalse(authFuture.isDone(), "Auth flow should be waiting for browser callback");
+
+            HttpRequest request = HttpRequest.newBuilder(
+                            URI.create("http://127.0.0.1:" + freePort + "/callback?error=access_denied"))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            assertEquals(400, response.statusCode());
+            assertTrue(response.body().contains("access_denied"));
+            assertFalse(authFuture.get(5, TimeUnit.SECONDS));
+        } finally {
+            authService.shutdown();
+        }
     }
 }

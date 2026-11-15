@@ -8,6 +8,7 @@ import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
+import com.noah.spotifycontroller.util.MinecraftGuiCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -347,7 +348,7 @@ public class SpotifyConfigScreen extends Screen {
     public void onClose() {
         flushPendingChanges();
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
-        client.gui.setScreen(this.parent);
+        MinecraftGuiCompat.setScreen(client, this.parent);
     }
 
     public Screen getParent() {
@@ -359,7 +360,7 @@ public class SpotifyConfigScreen extends Screen {
         // Clear cached box so returning from the wizard picks up any updated Client ID from config
         this.clientIdBox = null;
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
-        client.gui.setScreen(new SpotifySetupGuideScreen(this, config, authService, poller, hudOverlay));
+        MinecraftGuiCompat.setScreen(client, new SpotifySetupGuideScreen(this, config, authService, poller, hudOverlay));
     }
 
     private void flushPendingChanges() {

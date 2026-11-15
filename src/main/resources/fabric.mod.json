@@ -16,12 +16,12 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.noah.spotifycontroller.SpotifyControllerClient"
+      "com.noah.spotifycontroller.fabric.SpotifyControllerFabricClient"
     ]
   },
   "depends": {
     "fabricloader": ">=0.19.0",
-    "minecraft": "~${minecraft_version}",
+    "minecraft": "${minecraft_range}",
     "java": ">=25",
     "fabric-api": "*"
   }

@@ -5,6 +5,7 @@ import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
+import com.noah.spotifycontroller.util.MinecraftGuiCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -237,7 +238,7 @@ public class SpotifySetupGuideScreen extends Screen {
     @Override
     public void onClose() {
         persistDraftClientIdIfNonEmpty();
-        clientOrDefault().gui.setScreen(this.parent);
+        MinecraftGuiCompat.setScreen(clientOrDefault(), this.parent);
     }
 
     private void renderStepOneText(
@@ -436,7 +437,7 @@ public class SpotifySetupGuideScreen extends Screen {
         Screen configParent = (this.parent instanceof SpotifyConfigScreen existingConfig)
                 ? existingConfig.getParent()
                 : this.parent;
-        clientOrDefault().gui.setScreen(new SpotifyConfigScreen(
+        MinecraftGuiCompat.setScreen(clientOrDefault(), new SpotifyConfigScreen(
                 configParent,
                 config,
                 authService,

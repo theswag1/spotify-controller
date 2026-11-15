@@ -4,14 +4,36 @@ plugins {
     id 'maven-publish'
 }
 
+def isNeoForge = project.hasProperty('neoforge')
 def targetMcVersion = project.hasProperty('target_mc_version')
         ? project.property('target_mc_version').toString()
-        : (project.hasProperty('mc262') ? '26.2' : project.minecraft_version.toString())
-def targetFabricApiVersion = targetMcVersion == '26.2'
-        ? project.fabric_api_version_26_2.toString()
-        : project.fabric_api_version.toString()
+        : (project.hasProperty('mc261') ? '26.1.2'
+        : (project.hasProperty('mc262') ? '26.2' : project.minecraft_version.toString()))
+def isMc261Family = targetMcVersion.startsWith('26.1')
+def targetArchiveMcLabel = isMc261Family ? '26.1.x' : targetMcVersion
+def targetFabricRange = isMc261Family ? '~26.1' : "~${targetMcVersion}"
+def targetNeoForgeRange = isMc261Family ? '[26.1,)' : "[${targetMcVersion},)"
+def targetNeoForgeMcRange = isMc261Family ? '[26.1,26.2)' : "[${targetMcVersion},)"
 
-version = "${project.mod_version}-mc${targetMcVersion}"
+def targetFabricApiVersion = project.hasProperty('target_fabric_api_version')
+        ? project.property('target_fabric_api_version').toString()
+        : (isMc261Family ? project.fabric_api_version_26_1.toString()
+        : (targetMcVersion == '26.2' ? project.fabric_api_version_26_2.toString()
+        : project.fabric_api_version.toString()))
+def targetNeoForgeVersion = project.hasProperty('target_neoforge_version')
+        ? project.property('target_neoforge_version').toString()
+        : (isMc261Family ? project.neoforge_version_26_1.toString()
+        : (targetMcVersion == '26.2' ? project.neoforge_version_26_2.toString()
+        : project.neoforge_version.toString()))
+def targetNeoForgeFmlVersion = project.hasProperty('target_neoforge_fml_version')
+        ? project.property('target_neoforge_fml_version').toString()
+        : (isMc261Family ? project.neoforge_fml_version_26_1.toString()
+        : (targetMcVersion == '26.2' ? project.neoforge_fml_version_26_2.toString()
+        : project.neoforge_fml_version.toString()))
+
+version = isNeoForge
+        ? "${project.mod_version}-neoforge-mc${targetArchiveMcLabel}"
+        : "${project.mod_version}-fabric-mc${targetArchiveMcLabel}"
 group = project.maven_group
 
 base {
@@ -20,26 +42,61 @@ base {
 
 repositories {
     mavenCentral()
+    maven {
+        name = "NeoForged"
+        url = "https://maven.neoforged.net/releases"
+    }
 }
 
 dependencies {
     minecraft "com.mojang:minecraft:${targetMcVersion}"
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${targetFabricApiVersion}"
+
+    if (isNeoForge) {
+        compileOnly "net.neoforged:neoforge:${targetNeoForgeVersion}:universal"
+        compileOnly "net.neoforged.fancymodloader:loader:${targetNeoForgeFmlVersion}"
+        compileOnly "net.neoforged:bus:${project.neoforge_bus_version}"
+        compileOnly "net.neoforged:mergetool:2.0.7:api"
+    } else {
+        implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+        implementation "net.fabricmc.fabric-api:fabric-api:${targetFabricApiVersion}"
+    }
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+sourceSets {
+    main {
+        java {
+            if (isNeoForge) {
+                exclude 'com/noah/spotifycontroller/fabric/**'
+            } else {
+                exclude 'com/noah/spotifycontroller/neoforge/**'
+            }
+        }
+    }
+}
+
 processResources {
     inputs.property "version", project.version
-    inputs.property "minecraft_version", targetMcVersion
+    inputs.property "minecraft_range", targetFabricRange
+    inputs.property "neoforge_range", targetNeoForgeRange
+    inputs.property "neoforge_mc_range", targetNeoForgeMcRange
+    inputs.property "is_neoforge", isNeoForge
 
-    filesMatching("fabric.mod.json") {
+    if (isNeoForge) {
+        exclude "fabric.mod.json"
+    } else {
+        exclude "META-INF/neoforge.mods.toml"
+    }
+
+    filesMatching(["fabric.mod.json", "META-INF/neoforge.mods.toml"]) {
         expand(
                 "version": inputs.properties.version,
-                "minecraft_version": inputs.properties.minecraft_version
+                "minecraft_range": inputs.properties.minecraft_range,
+                "neoforge_range": inputs.properties.neoforge_range,
+                "neoforge_mc_range": inputs.properties.neoforge_mc_range
         )
     }
 }

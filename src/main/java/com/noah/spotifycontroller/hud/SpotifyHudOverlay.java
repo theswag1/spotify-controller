@@ -4,7 +4,7 @@ import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.gui.SpotifyConfigScreen;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
+import com.noah.spotifycontroller.util.MinecraftGuiCompat;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -15,7 +15,7 @@ import net.minecraft.resources.Identifier;
 /**
  * Renders the compact "Now Playing" Spotify card on the in-game HUD.
  */
-public class SpotifyHudOverlay implements HudElement {
+public class SpotifyHudOverlay {
     public static final int CARD_WIDTH = 190;
     public static final int CARD_HEIGHT = 46;
     private static final int ART_SIZE = 36;
@@ -36,12 +36,14 @@ public class SpotifyHudOverlay implements HudElement {
         this.albumArtManager = albumArtManager;
     }
 
-    @Override
+    /**
+     * Renders the Spotify HUD overlay during HUD extraction when enabled.
+     */
     public void extractRenderState(GuiGraphicsExtractor guiGraphics, DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
         if (!config.hudEnabled
-                || client.gui.hud.isHidden()
-                || client.gui.screen() instanceof SpotifyConfigScreen) {
+                || MinecraftGuiCompat.isHudHidden(client)
+                || MinecraftGuiCompat.getScreen(client) instanceof SpotifyConfigScreen) {
             return;
         }
 

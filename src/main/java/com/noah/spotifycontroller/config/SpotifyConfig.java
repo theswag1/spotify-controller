@@ -5,7 +5,6 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
-import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +69,7 @@ public class SpotifyConfig {
     }
 
     /**
-     * Returns the singleton config instance backed by Fabric's config directory.
+     * Returns the singleton config instance backed by the active mod loader's config directory.
      */
     public static SpotifyConfig get() {
         SpotifyConfig current = instance;
@@ -78,13 +77,34 @@ public class SpotifyConfig {
             synchronized (SpotifyConfig.class) {
                 current = instance;
                 if (current == null) {
-                    Path path = FabricLoader.getInstance().getConfigDir().resolve("spotify_controller.json");
+                    Path path = resolveDefaultConfigDir().resolve("spotify_controller.json");
                     current = loadFrom(path);
                     instance = current;
                 }
             }
         }
         return current;
+    }
+
+    private static Path resolveDefaultConfigDir() {
+        try {
+            Class<?> fabricLoaderClass = Class.forName("net.fabricmc.loader.api.FabricLoader");
+            Object loader = fabricLoaderClass.getMethod("getInstance").invoke(null);
+            return (Path) fabricLoaderClass.getMethod("getConfigDir").invoke(loader);
+        } catch (ReflectiveOperationException ignored) {
+            // Not running on Fabric
+        }
+        try {
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            Object configDirEnum = Enum.valueOf(
+                    (Class<? extends Enum>) Class.forName("net.neoforged.fml.loading.FMLPaths"),
+                    "CONFIGDIR"
+            );
+            return (Path) configDirEnum.getClass().getMethod("get").invoke(configDirEnum);
+        } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
+            // Not running on NeoForge
+        }
+        return Path.of("config");
     }
 
     /**

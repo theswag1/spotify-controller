@@ -1,0 +1,24 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+
+[[mods]]
+modId="spotify_controller"
+version="${version}"
+displayName="Spotify Controller"
+authors="Noah"
+description='''Control Spotify playback and view the currently playing track inside Minecraft using the Spotify Developer API.'''
+
+[[dependencies.spotify_controller]]
+modId="neoforge"
+type="required"
+versionRange="${neoforge_range}"
+ordering="NONE"
+side="CLIENT"
+
+[[dependencies.spotify_controller]]
+modId="minecraft"
+type="required"
+versionRange="${neoforge_mc_range}"
+ordering="NONE"
+side="CLIENT"
