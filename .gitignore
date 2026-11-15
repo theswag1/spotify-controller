@@ -1,0 +1,21 @@
+# Gradle & Build
+.gradle/
+build/
+out/
+
+# Minecraft runtime & logs
+run/
+logs/
+crash-reports/
+
+# Never commit Spotify OAuth tokens or Client ID config files
+**/spotify_controller.json
+
+# IDE & OS files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db

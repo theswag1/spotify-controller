@@ -1,0 +1,10 @@
+{
+  "key.category.spotify_controller.main": "Spotify Controller",
+  "key.spotify_controller.open_config": "Open Spotify Config / Status",
+  "screen.spotify_controller.config.title": "Spotify Controller Configuration",
+  "screen.spotify_controller.config.client_id": "Spotify Client ID",
+  "screen.spotify_controller.config.copy_redirect": "Copy Redirect URI",
+  "screen.spotify_controller.config.connect": "Save & Connect Spotify",
+  "screen.spotify_controller.config.disconnect": "Disconnect",
+  "screen.spotify_controller.config.done": "Done"
+}

@@ -1,0 +1,515 @@
+package com.noah.spotifycontroller.auth;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.awt.Desktop;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+/**
+ * Handles Spotify OAuth 2.0 Authorization Code with PKCE authentication,
+ * local loopback callback handling, and automatic access token refreshes.
+ */
+public class SpotifyAuthService {
+    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
+    private static final String AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize";
+    private static final String TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
+    private static final String SCOPES = "user-read-playback-state user-read-currently-playing user-modify-playback-state";
+    private static final String CODE_VERIFIER_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    private final SpotifyConfig config;
+    private final HttpClient httpClient;
+    private final Consumer<URI> browserOpener;
+    private final ScheduledExecutorService cleanupExecutor;
+
+    private final Object serverLock = new Object();
+    private HttpServer activeCallbackServer;
+    private CompletableFuture<Boolean> activeAuthFuture;
+
+    private final Object refreshLock = new Object();
+    private CompletableFuture<Boolean> inFlightRefresh;
+
+    public SpotifyAuthService(SpotifyConfig config, HttpClient httpClient) {
+        this(config, httpClient, SpotifyAuthService::openInDefaultBrowser);
+    }
+
+    public SpotifyAuthService(SpotifyConfig config, HttpClient httpClient, Consumer<URI> browserOpener) {
+        this.config = config;
+        this.httpClient = httpClient;
+        this.browserOpener = browserOpener != null ? browserOpener : SpotifyAuthService::openInDefaultBrowser;
+        this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "spotify-auth-cleanup");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * Generates a cryptographically random 64-character PKCE code verifier.
+     */
+    public static String generateCodeVerifier() {
+        StringBuilder sb = new StringBuilder(64);
+        for (int i = 0; i < 64; i++) {
+            int idx = SECURE_RANDOM.nextInt(CODE_VERIFIER_CHARSET.length());
+            sb.append(CODE_VERIFIER_CHARSET.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Computes the RFC 7636 S256 PKCE code challenge from a code verifier.
+     */
+    public static String computeCodeChallenge(String codeVerifier) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    /**
+     * Starts an interactive browser OAuth PKCE flow and opens a local loopback callback server.
+     */
+    public CompletableFuture<Boolean> startAuthFlow(Consumer<String> statusCallback) {
+        Consumer<String> notify = statusCallback != null ? statusCallback : msg -> {};
+        if (!config.hasClientId()) {
+            notify.accept("Missing Spotify Client ID! Set it in the Spotify Config screen first.");
+            return CompletableFuture.completedFuture(false);
+        }
+
+        stopCallbackServer();
+
+        String clientId;
+        int port;
+        String redirectUri;
+        synchronized (config) {
+            clientId = config.clientId;
+            port = config.callbackPort;
+            redirectUri = config.getRedirectUri();
+        }
+
+        String codeVerifier = generateCodeVerifier();
+        String codeChallenge = computeCodeChallenge(codeVerifier);
+        String state = generateRandomState();
+
+        CompletableFuture<Boolean> resultFuture = new CompletableFuture<>();
+        AtomicBoolean handled = new AtomicBoolean(false);
+
+        HttpServer server;
+        try {
+            server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
+        } catch (IOException e) {
+            String message = "Failed to start local callback server on port " + port + ": " + e.getMessage();
+            LOGGER.error(message, e);
+            notify.accept(message);
+            return CompletableFuture.completedFuture(false);
+        }
+
+        server.createContext("/callback", exchange -> {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendHtmlResponse(exchange, 405, "Method Not Allowed", "Invalid HTTP method.");
+                return;
+            }
+            if (!handled.compareAndSet(false, true)) {
+                sendHtmlResponse(exchange, 200, "Spotify Controller", "Authentication already processed. You may close this tab.");
+                return;
+            }
+
+            Map<String, String> params = parseQueryParams(exchange.getRequestURI().getRawQuery());
+            String error = params.get("error");
+            if (error != null && !error.isBlank()) {
+                String msg = "Spotify authorization failed: " + error;
+                sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
+                        "Authorization was cancelled or denied (" + escapeHtml(error) + "). You can close this tab.");
+                scheduleServerStop(server);
+                notify.accept(msg);
+                resultFuture.complete(false);
+                return;
+            }
+
+            String returnedState = params.get("state");
+            String code = params.get("code");
+            if (returnedState == null || !returnedState.equals(state)) {
+                String msg = "Spotify callback rejected due to mismatched OAuth state.";
+                sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
+                        "Invalid OAuth state parameter. Please try connecting again from Minecraft.");
+                scheduleServerStop(server);
+                notify.accept(msg);
+                resultFuture.complete(false);
+                return;
+            }
+
+            if (code == null || code.isBlank()) {
+                String msg = "Spotify callback did not include an authorization code.";
+                sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
+                        "Missing authorization code in callback. Please try again.");
+                scheduleServerStop(server);
+                notify.accept(msg);
+                resultFuture.complete(false);
+                return;
+            }
+
+            sendHtmlResponse(exchange, 200, "Spotify Connected",
+                    "Authorization received! Exchanging token... You can return to Minecraft now.");
+            scheduleServerStop(server);
+            notify.accept("Exchanging authorization code for Spotify tokens...");
+
+            exchangeCodeForTokens(clientId, code, redirectUri, codeVerifier)
+                    .whenComplete((ok, throwable) -> {
+                        if (throwable != null) {
+                            LOGGER.error("Token exchange failed", throwable);
+                            notify.accept("Token exchange failed: " + throwable.getMessage());
+                            resultFuture.complete(false);
+                        } else if (Boolean.TRUE.equals(ok)) {
+                            notify.accept("Connected to Spotify!");
+                            resultFuture.complete(true);
+                        } else {
+                            notify.accept("Failed to exchange Spotify authorization code for tokens.");
+                            resultFuture.complete(false);
+                        }
+                    });
+        });
+
+        server.setExecutor(Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "spotify-oauth-callback");
+            t.setDaemon(true);
+            return t;
+        }));
+        server.start();
+
+        synchronized (serverLock) {
+            this.activeCallbackServer = server;
+            this.activeAuthFuture = resultFuture;
+        }
+
+        // Automatically tear down the temporary listener if the user never finishes in-browser auth.
+        cleanupExecutor.schedule(() -> {
+            if (handled.compareAndSet(false, true) && !resultFuture.isDone()) {
+                stopCallbackServerIfMatches(server);
+                notify.accept("Spotify login timed out after 3 minutes.");
+                resultFuture.complete(false);
+            }
+        }, 3, TimeUnit.MINUTES);
+
+        String authUrl = buildAuthorizeUrl(clientId, redirectUri, codeChallenge, state);
+        notify.accept("Opened Spotify login in browser. Waiting for callback on " + redirectUri + "...");
+        try {
+            browserOpener.accept(URI.create(authUrl));
+        } catch (Exception e) {
+            LOGGER.error("Could not open browser for Spotify login", e);
+            stopCallbackServerIfMatches(server);
+            notify.accept("Could not open browser automatically: " + e.getMessage());
+            resultFuture.complete(false);
+        }
+
+        return resultFuture;
+    }
+
+    /**
+     * Exchanges the stored refresh token for a fresh access token.
+     */
+    public CompletableFuture<Boolean> refreshAccessToken() {
+        if (!config.hasRefreshToken() || !config.hasClientId()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        synchronized (refreshLock) {
+            if (inFlightRefresh != null && !inFlightRefresh.isDone()) {
+                return inFlightRefresh;
+            }
+
+            String clientId;
+            String refreshToken;
+            synchronized (config) {
+                clientId = config.clientId;
+                refreshToken = config.refreshToken;
+            }
+
+            String formBody = buildFormBody(Map.of(
+                    "grant_type", "refresh_token",
+                    "refresh_token", refreshToken,
+                    "client_id", clientId
+            ));
+
+            HttpRequest request = HttpRequest.newBuilder(URI.create(TOKEN_ENDPOINT))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(formBody))
+                    .build();
+
+            CompletableFuture<Boolean> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> handleTokenResponse(response, true))
+                    .exceptionally(ex -> {
+                        LOGGER.warn("Spotify token refresh request failed", ex);
+                        return false;
+                    })
+                    .whenComplete((ok, ex) -> {
+                        synchronized (refreshLock) {
+                            inFlightRefresh = null;
+                        }
+                    });
+
+            inFlightRefresh = future;
+            return future;
+        }
+    }
+
+    /**
+     * Returns a non-expired access token, refreshing it automatically if needed.
+     * Returns {@code null} when not authenticated.
+     */
+    public CompletableFuture<String> getValidAccessToken() {
+        synchronized (config) {
+            if (config.hasValidAccessToken()) {
+                return CompletableFuture.completedFuture(config.accessToken);
+            }
+        }
+        if (!config.hasRefreshToken() || !config.hasClientId()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return refreshAccessToken().thenApply(ok -> {
+            if (!Boolean.TRUE.equals(ok)) {
+                return null;
+            }
+            synchronized (config) {
+                return config.accessToken;
+            }
+        });
+    }
+
+    public void shutdown() {
+        stopCallbackServer();
+        cleanupExecutor.shutdownNow();
+    }
+
+    private CompletableFuture<Boolean> exchangeCodeForTokens(
+            String clientId,
+            String code,
+            String redirectUri,
+            String codeVerifier
+    ) {
+        String formBody = buildFormBody(Map.of(
+                "client_id", clientId,
+                "grant_type", "authorization_code",
+                "code", code,
+                "redirect_uri", redirectUri,
+                "code_verifier", codeVerifier
+        ));
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(TOKEN_ENDPOINT))
+                .timeout(Duration.ofSeconds(15))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(formBody))
+                .build();
+
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> handleTokenResponse(response, false));
+    }
+
+    private boolean handleTokenResponse(HttpResponse<String> response, boolean isRefresh) {
+        int status = response.statusCode();
+        String body = response.body();
+        if (status >= 200 && status < 300) {
+            try {
+                JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+                String accessToken = json.has("access_token") ? json.get("access_token").getAsString() : "";
+                String refreshToken = (json.has("refresh_token") && !json.get("refresh_token").isJsonNull())
+                        ? json.get("refresh_token").getAsString()
+                        : null;
+                long expiresIn = json.has("expires_in") ? json.get("expires_in").getAsLong() : 3600L;
+
+                if (accessToken.isBlank()) {
+                    LOGGER.warn("Spotify token endpoint returned 2xx without access_token");
+                    return false;
+                }
+                config.updateTokens(accessToken, refreshToken, expiresIn);
+                return true;
+            } catch (Exception e) {
+                LOGGER.error("Failed to parse Spotify token response", e);
+                return false;
+            }
+        }
+
+        String errorCode = "";
+        String errorDescription = body;
+        try {
+            JsonElement parsed = JsonParser.parseString(body);
+            if (parsed.isJsonObject()) {
+                JsonObject obj = parsed.getAsJsonObject();
+                if (obj.has("error")) {
+                    errorCode = obj.get("error").getAsString();
+                }
+                if (obj.has("error_description")) {
+                    errorDescription = obj.get("error_description").getAsString();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        LOGGER.warn("Spotify token request failed (HTTP {}): {} - {}", status, errorCode, errorDescription);
+        if (isRefresh && "invalid_grant".equals(errorCode)) {
+            LOGGER.warn("Spotify refresh token was revoked or expired; clearing stored tokens.");
+            config.clearTokens();
+        }
+        return false;
+    }
+
+    private void stopCallbackServer() {
+        synchronized (serverLock) {
+            if (activeCallbackServer != null) {
+                activeCallbackServer.stop(0);
+                activeCallbackServer = null;
+            }
+            if (activeAuthFuture != null && !activeAuthFuture.isDone()) {
+                activeAuthFuture.complete(false);
+            }
+            activeAuthFuture = null;
+        }
+    }
+
+    private void stopCallbackServerIfMatches(HttpServer server) {
+        synchronized (serverLock) {
+            if (activeCallbackServer == server) {
+                activeCallbackServer.stop(0);
+                activeCallbackServer = null;
+            }
+        }
+    }
+
+    private void scheduleServerStop(HttpServer server) {
+        cleanupExecutor.schedule(() -> stopCallbackServerIfMatches(server), 1, TimeUnit.SECONDS);
+    }
+
+    private static String buildAuthorizeUrl(String clientId, String redirectUri, String codeChallenge, String state) {
+        return AUTHORIZE_ENDPOINT
+                + "?response_type=code"
+                + "&client_id=" + urlEncode(clientId)
+                + "&scope=" + urlEncode(SCOPES)
+                + "&redirect_uri=" + urlEncode(redirectUri)
+                + "&code_challenge_method=S256"
+                + "&code_challenge=" + urlEncode(codeChallenge)
+                + "&state=" + urlEncode(state);
+    }
+
+    private static String buildFormBody(Map<String, String> params) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            if (!sb.isEmpty()) {
+                sb.append('&');
+            }
+            sb.append(urlEncode(entry.getKey())).append('=').append(urlEncode(entry.getValue()));
+        }
+        return sb.toString();
+    }
+
+    private static Map<String, String> parseQueryParams(String rawQuery) {
+        Map<String, String> map = new HashMap<>();
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return map;
+        }
+        for (String pair : rawQuery.split("&")) {
+            int idx = pair.indexOf('=');
+            if (idx > 0) {
+                String key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8);
+                String value = URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8);
+                map.put(key, value);
+            }
+        }
+        return map;
+    }
+
+    private static void sendHtmlResponse(HttpExchange exchange, int statusCode, String title, String message)
+            throws IOException {
+        String html = """
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                  <meta charset="UTF-8">
+                  <title>%s</title>
+                  <style>
+                    body { font-family: system-ui, sans-serif; background: #121212; color: #fff;
+                           display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                    .card { background: #1e1e1e; border-radius: 12px; padding: 32px; max-width: 460px;
+                            text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+                    h1 { color: #1DB954; margin-top: 0; font-size: 1.5rem; }
+                    p { color: #d4d4d4; line-height: 1.5; }
+                  </style>
+                </head>
+                <body>
+                  <div class="card">
+                    <h1>%s</h1>
+                    <p>%s</p>
+                  </div>
+                </body>
+                </html>
+                """.formatted(escapeHtml(title), escapeHtml(title), escapeHtml(message));
+
+        byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+        exchange.sendResponseHeaders(statusCode, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
+    }
+
+    private static String generateRandomState() {
+        byte[] bytes = new byte[24];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
+    }
+
+    private static void openInDefaultBrowser(URI uri) {
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            try {
+                Desktop.getDesktop().browse(uri);
+                return;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to launch browser", e);
+            }
+        }
+        throw new IllegalStateException("System browser browsing is not supported on this platform");
+    }
+}

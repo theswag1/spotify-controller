@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "spotify_controller",
+  "version": "${version}",
+  "name": "Spotify Controller",
+  "description": "Control Spotify playback and view the currently playing track inside Minecraft using the Spotify Developer API.",
+  "authors": [
+    "Noah"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.noah.spotifycontroller.SpotifyControllerClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
