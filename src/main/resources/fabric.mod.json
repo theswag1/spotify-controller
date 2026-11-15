@@ -7,6 +7,11 @@
   "authors": [
     "Noah"
   ],
+  "contact": {
+    "homepage": "https://github.com/theswag1/spotify-controller",
+    "sources": "https://github.com/theswag1/spotify-controller",
+    "issues": "https://github.com/theswag1/spotify-controller/issues"
+  },
   "license": "MIT",
   "environment": "client",
   "entrypoints": {

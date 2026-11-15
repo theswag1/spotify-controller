@@ -30,6 +30,8 @@ import net.minecraft.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Desktop;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -189,7 +191,7 @@ public class SpotifyControllerClient implements ClientModInitializer {
 
     /**
      * Opens a URI in the system browser across both Minecraft 26.3 ({@code Blaze3D.openUri})
-     * and Minecraft 26.2 ({@code Util.getPlatform().openUri}).
+     * and Minecraft 26.2 ({@code Util.getPlatform().openUri}), with AWT Desktop fallback.
      */
     public static void openBrowserUri(URI uri) {
         try {
@@ -201,11 +203,22 @@ public class SpotifyControllerClient implements ClientModInitializer {
         }
         try {
             Object platform = Util.getPlatform();
-            Method utilOpenUri = platform.getClass().getMethod("openUri", URI.class);
+            Method utilOpenUri = Util.OS.class.getMethod("openUri", URI.class);
             utilOpenUri.invoke(platform, uri);
-        } catch (ReflectiveOperationException e) {
-            LOGGER.error("Failed to open browser URI {}", uri, e);
+            return;
+        } catch (ReflectiveOperationException ignored) {
+            // Fall back to AWT Desktop if neither Minecraft helper is present
         }
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            try {
+                Desktop.getDesktop().browse(uri);
+                return;
+            } catch (IOException e) {
+                LOGGER.error("Failed to open browser URI {}", uri, e);
+                throw new RuntimeException("Failed to open browser: " + e.getMessage(), e);
+            }
+        }
+        throw new IllegalStateException("System browser browsing is not supported on this platform");
     }
 
     private static InputConstants.Type getKeyboardInputType() {

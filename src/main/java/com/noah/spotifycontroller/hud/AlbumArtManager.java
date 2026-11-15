@@ -67,7 +67,6 @@ public class AlbumArtManager {
      */
     public Identifier getOrLoadTexture(String albumArtUrl) {
         if (albumArtUrl == null || albumArtUrl.isBlank()) {
-            this.desiredUrl = "";
             return null;
         }
 
@@ -106,7 +105,14 @@ public class AlbumArtManager {
         this.inFlightUrl = url;
         HttpRequest request;
         try {
-            request = HttpRequest.newBuilder(URI.create(url))
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("https") && !scheme.equalsIgnoreCase("http"))) {
+                LOGGER.debug("Refusing non-HTTP(S) album art URL: {}", url);
+                clearInFlightIfMatches(url);
+                return;
+            }
+            request = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
@@ -140,6 +146,11 @@ public class AlbumArtManager {
                     }
 
                     Minecraft client = Minecraft.getInstance();
+                    if (client == null) {
+                        nativeImage.close();
+                        clearInFlightIfMatches(url);
+                        return;
+                    }
                     client.execute(() -> {
                         if (!url.equals(this.desiredUrl)) {
                             nativeImage.close();

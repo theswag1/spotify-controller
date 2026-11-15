@@ -21,8 +21,20 @@ import java.util.concurrent.CompletableFuture;
 public class SpotifyApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
     private static final String BASE_URL = "https://api.spotify.com/v1/me/player";
+    private static final String PLAYBACK_STATE_URL = BASE_URL + "?additional_types=track,episode";
 
     public record ApiResult(boolean success, String message) {
+    }
+
+    public enum PlaybackPollStatus {
+        ACTIVE,
+        NO_PLAYBACK,
+        UNAUTHENTICATED,
+        RATE_LIMITED,
+        ERROR
+    }
+
+    public record PlaybackPollResult(PlaybackPollStatus status, Optional<TrackState> track, String message) {
     }
 
     private final SpotifyAuthService authService;
@@ -39,25 +51,68 @@ public class SpotifyApiClient {
     }
 
     public CompletableFuture<Optional<TrackState>> getPlaybackState() {
+        return pollPlaybackState().thenApply(PlaybackPollResult::track);
+    }
+
+    public CompletableFuture<PlaybackPollResult> pollPlaybackState() {
         if (isRateLimited()) {
-            return CompletableFuture.completedFuture(Optional.empty());
+            return CompletableFuture.completedFuture(new PlaybackPollResult(
+                    PlaybackPollStatus.RATE_LIMITED,
+                    Optional.empty(),
+                    "Rate limited by Spotify; pausing polls briefly"
+            ));
         }
-        return sendAuthorizedRequest("GET", BASE_URL, null, true)
+        return sendAuthorizedRequest("GET", PLAYBACK_STATE_URL, null, true)
                 .thenApply(response -> {
                     if (response == null) {
-                        return Optional.empty();
+                        return new PlaybackPollResult(
+                                PlaybackPollStatus.UNAUTHENTICATED,
+                                Optional.empty(),
+                                "Not connected — click Connect Spotify or run /spotify login"
+                        );
                     }
                     int status = response.statusCode();
                     if (status == 204) {
-                        return Optional.empty();
+                        return new PlaybackPollResult(
+                                PlaybackPollStatus.NO_PLAYBACK,
+                                Optional.empty(),
+                                "Connected (no active Spotify playback)"
+                        );
                     }
                     if (status >= 200 && status < 300) {
-                        return TrackState.fromPlayerJson(response.body());
+                        Optional<TrackState> parsed = TrackState.fromPlayerJson(response.body());
+                        if (parsed.isPresent()) {
+                            TrackState track = parsed.get();
+                            String msg = (track.isPlaying() ? "Playing: " : "Paused: ")
+                                    + track.trackName() + " - " + track.artistName();
+                            return new PlaybackPollResult(PlaybackPollStatus.ACTIVE, parsed, msg);
+                        }
+                        return new PlaybackPollResult(
+                                PlaybackPollStatus.NO_PLAYBACK,
+                                Optional.empty(),
+                                "Connected (no active Spotify playback)"
+                        );
                     }
-                    if (status != 429) {
-                        LOGGER.debug("GET /me/player returned HTTP {}: {}", status, response.body());
+                    if (status == 401) {
+                        return new PlaybackPollResult(
+                                PlaybackPollStatus.UNAUTHENTICATED,
+                                Optional.empty(),
+                                "Spotify session expired — reconnect via /spotify login"
+                        );
                     }
-                    return Optional.empty();
+                    if (status == 429) {
+                        return new PlaybackPollResult(
+                                PlaybackPollStatus.RATE_LIMITED,
+                                Optional.empty(),
+                                "Rate limited by Spotify; pausing polls briefly"
+                        );
+                    }
+                    LOGGER.debug("GET /me/player returned HTTP {}: {}", status, response.body());
+                    return new PlaybackPollResult(
+                            PlaybackPollStatus.ERROR,
+                            Optional.empty(),
+                            formatErrorMessage(status, response)
+                    );
                 });
     }
 
@@ -239,11 +294,19 @@ public class SpotifyApiClient {
         if ("GET".equals(method)) {
             builder.GET();
         } else if ("POST".equals(method)) {
-            builder.header("Content-Type", "application/json");
-            builder.POST(HttpRequest.BodyPublishers.ofString(jsonBody != null ? jsonBody : ""));
+            if (jsonBody != null && !jsonBody.isEmpty()) {
+                builder.header("Content-Type", "application/json");
+                builder.POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+            } else {
+                builder.POST(HttpRequest.BodyPublishers.noBody());
+            }
         } else if ("PUT".equals(method)) {
-            builder.header("Content-Type", "application/json");
-            builder.PUT(HttpRequest.BodyPublishers.ofString(jsonBody != null ? jsonBody : ""));
+            if (jsonBody != null && !jsonBody.isEmpty()) {
+                builder.header("Content-Type", "application/json");
+                builder.PUT(HttpRequest.BodyPublishers.ofString(jsonBody));
+            } else {
+                builder.PUT(HttpRequest.BodyPublishers.noBody());
+            }
         } else {
             throw new IllegalArgumentException("Unsupported HTTP method: " + method);
         }

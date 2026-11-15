@@ -15,6 +15,8 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
@@ -42,7 +44,7 @@ class SpotifyAuthAndConfigTest {
     }
 
     @Test
-    void savesAndReloadsConfigWithTrimmedClientIdAndTokens(@TempDir Path tempDir) {
+    void savesAndReloadsConfigWithTrimmedClientIdAndTokens(@TempDir Path tempDir) throws IOException {
         Path configPath = tempDir.resolve("spotify_controller.json");
 
         SpotifyConfig created = SpotifyConfig.loadFrom(configPath);
@@ -52,6 +54,12 @@ class SpotifyAuthAndConfigTest {
         created.setClientId("  abc123clientid  ");
         created.updateTokens("access-token-xyz", "refresh-token-123", 3600);
 
+        // Main config JSON should not contain raw OAuth tokens
+        String mainConfigJson = Files.readString(configPath, StandardCharsets.UTF_8);
+        assertFalse(mainConfigJson.contains("access-token-xyz"));
+        assertFalse(mainConfigJson.contains("refresh-token-123"));
+        assertTrue(Files.exists(created.getTokenPath()));
+
         SpotifyConfig reloaded = SpotifyConfig.loadFrom(configPath);
         assertEquals("abc123clientid", reloaded.clientId);
         assertTrue(reloaded.hasClientId());
@@ -60,11 +68,15 @@ class SpotifyAuthAndConfigTest {
         assertEquals("access-token-xyz", reloaded.accessToken);
         assertEquals("refresh-token-123", reloaded.refreshToken);
 
-        reloaded.clearTokens();
+        // Changing to a different Client ID must invalidate tokens from the old Client ID
+        reloaded.setClientId("different-client-id");
+        assertFalse(reloaded.hasValidAccessToken());
+        assertFalse(reloaded.hasRefreshToken());
+
         SpotifyConfig cleared = SpotifyConfig.loadFrom(configPath);
         assertFalse(cleared.hasValidAccessToken());
         assertFalse(cleared.hasRefreshToken());
-        assertEquals("abc123clientid", cleared.clientId);
+        assertEquals("different-client-id", cleared.clientId);
     }
 
     @Test
@@ -245,5 +257,37 @@ class SpotifyAuthAndConfigTest {
         assertEquals(3, SpotifySetupGuideScreen.clampStep(3));
         assertEquals(3, SpotifySetupGuideScreen.clampStep(4));
         assertEquals(3, SpotifySetupGuideScreen.clampStep(99));
+    }
+
+    @Test
+    void parsesPodcastEpisodePayload() {
+        String episodePayload = """
+                {
+                  "progress_ms": 120000,
+                  "is_playing": true,
+                  "currently_playing_type": "episode",
+                  "item": {
+                    "id": "ep-99",
+                    "name": "Deep Dive into Redstone",
+                    "duration_ms": 1800000,
+                    "images": [
+                      { "url": "https://i.scdn.co/image/ep300", "width": 300, "height": 300 }
+                    ],
+                    "show": {
+                      "name": "Block Talk",
+                      "publisher": "Minecraft Audio Network"
+                    }
+                  }
+                }
+                """;
+
+        Optional<TrackState> parsed = TrackState.fromPlayerJson(episodePayload);
+        assertTrue(parsed.isPresent());
+        TrackState episode = parsed.get();
+        assertEquals("ep-99", episode.trackId());
+        assertEquals("Deep Dive into Redstone", episode.trackName());
+        assertEquals("Minecraft Audio Network", episode.artistName());
+        assertEquals("https://i.scdn.co/image/ep300", episode.albumArtUrl());
+        assertTrue(episode.isPlaying());
     }
 }

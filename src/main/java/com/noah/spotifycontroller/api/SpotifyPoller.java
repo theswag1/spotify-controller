@@ -4,7 +4,6 @@ import com.noah.spotifycontroller.config.SpotifyConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -94,25 +93,28 @@ public class SpotifyPoller {
             return;
         }
 
-        apiClient.getPlaybackState().whenComplete((optionalTrack, throwable) -> {
+        apiClient.pollPlaybackState().whenComplete((result, throwable) -> {
             try {
                 if (throwable != null) {
                     LOGGER.debug("Spotify background poll error", throwable);
                     lastStatusMessage = "Error polling Spotify: " + throwable.getMessage();
                     return;
                 }
-                Optional<TrackState> state = optionalTrack != null ? optionalTrack : Optional.empty();
-                if (state.isPresent()) {
-                    TrackState track = state.get();
-                    currentTrack = track;
-                    lastStatusMessage = (track.isPlaying() ? "Playing: " : "Paused: ")
-                            + track.trackName() + " - " + track.artistName();
-                } else {
-                    currentTrack = null;
-                    if (config.hasValidAccessToken() || config.hasRefreshToken()) {
-                        lastStatusMessage = "Connected (no active Spotify playback)";
-                    } else {
-                        lastStatusMessage = "Not connected";
+                if (result == null) {
+                    return;
+                }
+                switch (result.status()) {
+                    case ACTIVE -> {
+                        currentTrack = result.track().orElse(null);
+                        lastStatusMessage = result.message();
+                    }
+                    case NO_PLAYBACK, UNAUTHENTICATED -> {
+                        currentTrack = null;
+                        lastStatusMessage = result.message();
+                    }
+                    case RATE_LIMITED, ERROR -> {
+                        // Preserve currentTrack during transient rate-limits or 5xx errors so the HUD does not flicker
+                        lastStatusMessage = result.message();
                     }
                 }
             } finally {

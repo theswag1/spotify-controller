@@ -29,6 +29,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -54,6 +55,7 @@ public class SpotifyAuthService {
 
     private final Object serverLock = new Object();
     private HttpServer activeCallbackServer;
+    private ExecutorService activeCallbackExecutor;
     private CompletableFuture<Boolean> activeAuthFuture;
 
     private final Object refreshLock = new Object();
@@ -202,15 +204,17 @@ public class SpotifyAuthService {
                     });
         });
 
-        server.setExecutor(Executors.newSingleThreadExecutor(r -> {
+        ExecutorService callbackExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "spotify-oauth-callback");
             t.setDaemon(true);
             return t;
-        }));
+        });
+        server.setExecutor(callbackExecutor);
         server.start();
 
         synchronized (serverLock) {
             this.activeCallbackServer = server;
+            this.activeCallbackExecutor = callbackExecutor;
             this.activeAuthFuture = resultFuture;
         }
 
@@ -379,8 +383,10 @@ public class SpotifyAuthService {
         }
 
         LOGGER.warn("Spotify token request failed (HTTP {}): {} - {}", status, errorCode, errorDescription);
-        if (isRefresh && "invalid_grant".equals(errorCode)) {
-            LOGGER.warn("Spotify refresh token was revoked or expired; clearing stored tokens.");
+        if (isRefresh && ("invalid_grant".equals(errorCode)
+                || "invalid_client".equals(errorCode)
+                || "unauthorized_client".equals(errorCode))) {
+            LOGGER.warn("Spotify refresh token rejected ({}); clearing stored tokens.", errorCode);
             config.clearTokens();
         }
         return false;
@@ -391,6 +397,10 @@ public class SpotifyAuthService {
             if (activeCallbackServer != null) {
                 activeCallbackServer.stop(0);
                 activeCallbackServer = null;
+            }
+            if (activeCallbackExecutor != null) {
+                activeCallbackExecutor.shutdownNow();
+                activeCallbackExecutor = null;
             }
             if (activeAuthFuture != null && !activeAuthFuture.isDone()) {
                 activeAuthFuture.complete(false);
@@ -404,6 +414,10 @@ public class SpotifyAuthService {
             if (activeCallbackServer == server) {
                 activeCallbackServer.stop(0);
                 activeCallbackServer = null;
+                if (activeCallbackExecutor != null) {
+                    activeCallbackExecutor.shutdownNow();
+                    activeCallbackExecutor = null;
+                }
             }
         }
     }

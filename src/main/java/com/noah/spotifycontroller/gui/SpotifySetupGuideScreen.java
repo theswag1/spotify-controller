@@ -15,6 +15,7 @@ import net.minecraft.util.FormattedCharSequence;
 
 import java.net.URI;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Interactive 3-step in-game wizard guiding players through creating a Spotify Developer app,
@@ -42,6 +43,7 @@ public class SpotifySetupGuideScreen extends Screen {
     private String draftClientId;
     private String statusMessage = "";
     private boolean authInProgress = false;
+    private CompletableFuture<Boolean> currentAuthFuture;
 
     public SpotifySetupGuideScreen(
             Screen parent,
@@ -407,10 +409,15 @@ public class SpotifySetupGuideScreen extends Screen {
         this.statusMessage = "Starting Spotify authorization in your browser...";
 
         Minecraft client = clientOrDefault();
-        authService.startAuthFlow(message -> client.execute(() -> {
+        CompletableFuture<Boolean> authFuture = authService.startAuthFlow(message -> client.execute(() -> {
             this.statusMessage = message;
             this.poller.setStatusMessage(message);
-        })).whenComplete((success, throwable) -> client.execute(() -> {
+        }));
+        this.currentAuthFuture = authFuture;
+        authFuture.whenComplete((success, throwable) -> client.execute(() -> {
+            if (this.currentAuthFuture != authFuture) {
+                return;
+            }
             this.authInProgress = false;
             if (this.saveAndConnectButton != null) {
                 this.saveAndConnectButton.active = true;

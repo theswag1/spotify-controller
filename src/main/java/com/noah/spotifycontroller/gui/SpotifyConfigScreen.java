@@ -18,6 +18,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * In-game configuration screen for entering the Spotify Developer Client ID,
@@ -51,12 +52,15 @@ public class SpotifyConfigScreen extends Screen {
 
     private EditBox clientIdBox;
     private EditBox accentColorBox;
+    private Button connectButton;
     private Button colorPresetButton;
     private Button disconnectButton;
     private String statusOverride;
     private boolean authInProgress = false;
+    private CompletableFuture<Boolean> currentAuthFuture;
     private boolean updatingColorBoxProgrammatically = false;
     private boolean draggingHud = false;
+    private boolean dirtyConfig = false;
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
 
@@ -87,7 +91,7 @@ public class SpotifyConfigScreen extends Screen {
     @Override
     protected void init() {
         int left = (this.width - CONTENT_WIDTH) / 2;
-        int top = Math.max(24, (this.height - 258) / 2);
+        int top = computeTop();
 
         String previousInput = clientIdBox != null
                 ? clientIdBox.getValue()
@@ -114,7 +118,7 @@ public class SpotifyConfigScreen extends Screen {
                 ).bounds(left, top + 72, HALF_BUTTON_WIDTH, 20).build()
         );
 
-        addRenderableWidget(
+        connectButton = addRenderableWidget(
                 Button.builder(
                         Component.translatable("screen.spotify_controller.config.connect"),
                         button -> saveAndConnect()
@@ -164,7 +168,8 @@ public class SpotifyConfigScreen extends Screen {
         updatingColorBoxProgrammatically = false;
         accentColorBox.setResponder(value -> {
             if (!updatingColorBoxProgrammatically && SpotifyConfig.isValidHexColor(value)) {
-                config.setAccentColorHex(value);
+                config.accentColorHex = SpotifyConfig.normalizeHexColor(value);
+                this.dirtyConfig = true;
                 if (colorPresetButton != null) {
                     colorPresetButton.setMessage(getColorPresetButtonLabel());
                 }
@@ -205,9 +210,9 @@ public class SpotifyConfigScreen extends Screen {
         super.extractRenderState(guiGraphics, mouseX, mouseY, partialTick);
 
         int left = (this.width - CONTENT_WIDTH) / 2;
-        int top = Math.max(24, (this.height - 258) / 2);
+        int top = computeTop();
 
-        guiGraphics.centeredText(this.font, this.title, this.width / 2, top - 16, 0xFFFFFFFF);
+        guiGraphics.centeredText(this.font, this.title, this.width / 2, Math.max(4, top - 14), 0xFFFFFFFF);
         guiGraphics.text(
                 this.font,
                 Component.translatable("screen.spotify_controller.config.client_id"),
@@ -228,8 +233,8 @@ public class SpotifyConfigScreen extends Screen {
         guiGraphics.fill(swatchX, swatchY, swatchX + 20, swatchY + 20, config.getAccentColorArgb());
         guiGraphics.outline(swatchX, swatchY, 20, 20, 0xFFFFFFFF);
 
-        int cardTop = top + 178;
-        int cardBottom = cardTop + 80;
+        int cardTop = top + 176;
+        int cardBottom = Math.min(this.height - 4, cardTop + 78);
         guiGraphics.fill(left, cardTop, left + CONTENT_WIDTH, cardBottom, 0xAA181818);
         guiGraphics.outline(left, cardTop, CONTENT_WIDTH, cardBottom - cardTop, 0xFF333333);
 
@@ -276,6 +281,9 @@ public class SpotifyConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (super.mouseClicked(event, doubleClick)) {
+            return true;
+        }
         if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             float scale = SpotifyConfig.clampHudScale(config.hudScale);
             int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, scale);
@@ -287,7 +295,7 @@ public class SpotifyConfigScreen extends Screen {
                 return true;
             }
         }
-        return super.mouseClicked(event, doubleClick);
+        return false;
     }
 
     @Override
@@ -296,6 +304,7 @@ public class SpotifyConfigScreen extends Screen {
             float scale = SpotifyConfig.clampHudScale(config.hudScale);
             config.hudX = SpotifyHudOverlay.clampX((int) Math.round(event.x()) - dragOffsetX, this.width, scale);
             config.hudY = SpotifyHudOverlay.clampY((int) Math.round(event.y()) - dragOffsetY, this.height, scale);
+            this.dirtyConfig = true;
             return true;
         }
         return super.mouseDragged(event, dragX, dragY);
@@ -305,6 +314,7 @@ public class SpotifyConfigScreen extends Screen {
     public boolean mouseReleased(MouseButtonEvent event) {
         if (this.draggingHud && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             this.draggingHud = false;
+            this.dirtyConfig = false;
             config.save();
             this.statusOverride = "Saved HUD position (" + config.hudX + ", " + config.hudY + ").";
             return true;
@@ -324,7 +334,7 @@ public class SpotifyConfigScreen extends Screen {
                 config.hudScale = nextScale;
                 config.hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, nextScale);
                 config.hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, nextScale);
-                config.save();
+                this.dirtyConfig = true;
                 int percent = Math.round(nextScale * 100.0f);
                 this.statusOverride = "HUD size: " + percent + "%";
                 return true;
@@ -335,11 +345,7 @@ public class SpotifyConfigScreen extends Screen {
 
     @Override
     public void onClose() {
-        if (this.draggingHud) {
-            this.draggingHud = false;
-            config.save();
-        }
-        persistEditedClientIdIfChanged();
+        flushPendingChanges();
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         client.gui.setScreen(this.parent);
     }
@@ -349,15 +355,24 @@ public class SpotifyConfigScreen extends Screen {
     }
 
     private void openSetupGuide() {
-        if (this.draggingHud) {
-            this.draggingHud = false;
-            config.save();
-        }
-        persistEditedClientIdIfChanged();
+        flushPendingChanges();
         // Clear cached box so returning from the wizard picks up any updated Client ID from config
         this.clientIdBox = null;
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         client.gui.setScreen(new SpotifySetupGuideScreen(this, config, authService, poller, hudOverlay));
+    }
+
+    private void flushPendingChanges() {
+        this.draggingHud = false;
+        boolean savedByClientId = persistEditedClientIdIfChanged();
+        if (this.dirtyConfig && !savedByClientId) {
+            config.save();
+        }
+        this.dirtyConfig = false;
+    }
+
+    private int computeTop() {
+        return Math.max(16, (this.height - 254) / 2);
     }
 
     private void renderDraggableHudPreview(
@@ -472,13 +487,19 @@ public class SpotifyConfigScreen extends Screen {
 
         config.setClientId(enteredId);
         authInProgress = true;
+        updateButtonStates();
         this.statusOverride = "Starting Spotify authorization in your browser...";
 
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
-        authService.startAuthFlow(message -> client.execute(() -> {
+        CompletableFuture<Boolean> authFuture = authService.startAuthFlow(message -> client.execute(() -> {
             this.statusOverride = message;
             this.poller.setStatusMessage(message);
-        })).whenComplete((success, throwable) -> client.execute(() -> {
+        }));
+        this.currentAuthFuture = authFuture;
+        authFuture.whenComplete((success, throwable) -> client.execute(() -> {
+            if (this.currentAuthFuture != authFuture) {
+                return;
+            }
             this.authInProgress = false;
             if (Boolean.TRUE.equals(success)) {
                 this.statusOverride = "Connected to Spotify! Fetching playback state...";
@@ -497,14 +518,16 @@ public class SpotifyConfigScreen extends Screen {
         updateButtonStates();
     }
 
-    private void persistEditedClientIdIfChanged() {
+    private boolean persistEditedClientIdIfChanged() {
         if (clientIdBox == null) {
-            return;
+            return false;
         }
         String enteredId = clientIdBox.getValue().trim();
         if (!enteredId.equals(config.clientId)) {
             config.setClientId(enteredId);
+            return true;
         }
+        return false;
     }
 
     private Component getHudToggleLabel() {
@@ -516,6 +539,9 @@ public class SpotifyConfigScreen extends Screen {
     }
 
     private void updateButtonStates() {
+        if (connectButton != null) {
+            connectButton.active = !authInProgress;
+        }
         if (disconnectButton != null) {
             disconnectButton.active = !authInProgress && (config.hasValidAccessToken() || config.hasRefreshToken());
         }

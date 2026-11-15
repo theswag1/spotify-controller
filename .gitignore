@@ -10,6 +10,8 @@ crash-reports/
 
 # Never commit Spotify OAuth tokens or Client ID config files
 **/spotify_controller.json
+**/spotify_controller_tokens.json
+*.tmp
 
 # IDE & OS files
 .idea/
