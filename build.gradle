@@ -11,9 +11,7 @@ def targetFabricApiVersion = targetMcVersion == '26.2'
         ? project.fabric_api_version_26_2.toString()
         : project.fabric_api_version.toString()
 
-version = targetMcVersion == project.minecraft_version.toString()
-        ? project.mod_version
-        : "${project.mod_version}-mc${targetMcVersion}"
+version = "${project.mod_version}-mc${targetMcVersion}"
 group = project.maven_group
 
 base {
