@@ -1,6 +1,6 @@
 # Spotify Controller
 
-A client-side Fabric mod for **Minecraft 26.3** and **26.2** that connects to the Spotify Web API via OAuth 2.0 PKCE, renders a draggable in-game **Now Playing** HUD widget, and lets you control Spotify playback through keybinds, an interactive controller UI, and client commands.
+A client-side Fabric mod that connects to the Spotify Web API via OAuth 2.0 PKCE, renders a draggable in-game **Now Playing** HUD widget, and lets you control Spotify playback through keybinds, an interactive controller UI, and client commands.
 
 Because everything runs client-side, it works in singleplayer and on any multiplayer server without requiring server-side installation.
 
