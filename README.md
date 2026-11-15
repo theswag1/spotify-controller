@@ -8,14 +8,18 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Features
 
+- **In-Game 3-Step First-Time Setup Wizard** (`O`, `Z`, `/spotify setup`, or **Setup Guide** in Config)
+  - Automatically opens the first time you press `O` or `Z` when no Spotify **Client ID** is configured, accompanied by a one-time yellow chat prompt when joining a world unconfigured.
+  - Walks step-by-step through creating a Spotify Developer App (**Open Spotify Dashboard** button), registering the loopback Redirect URL (**Copy Redirect URL** button), and pasting/saving your **Client ID** (**Paste Clipboard** + **Save & Connect Spotify** buttons).
 - **Full In-Game Controller Screen** (`Z`, `/spotify`, or `/spotify player`)
   - Displays `64x64` album art, marquee scrolling track / artist / album names, and a **clickable seek bar**.
   - Transport controls for **Shuffle**, **Previous**, **Play / Pause**, **Next**, and **Repeat** (`OFF` / `ALL` / `ONE`).
   - **Volume -10% / +10%** buttons plus an interactive **click-and-drag Volume bar**.
   - Quick buttons to toggle the HUD widget and open the **Config / Move HUD** screen.
-- **Draggable In-Game HUD Widget**
-  - Displays the current track's album art, song title, artist name, elapsed/total time, and smoothly interpolated progress bar.
-  - **Drag-and-drop positioning** inside the Config screen (`O` or `/spotify config`) with live coordinate preview and a **Reset HUD Position** button.
+- **Draggable, Resizable & Customizable HUD Widget**
+  - Displays the current track's album art, song title, artist name, elapsed/total time, accent end strip, and smoothly interpolated progress bar.
+  - **Drag-and-drop positioning** inside the Config screen (`O` or `/spotify config`) and **scroll-wheel resizing (`50%`–`200%` in `5%` steps)** while hovering over the HUD preview, plus a **Reset HUD** button.
+  - **Customizable accent & playback bar color** via 8 color presets (`Green`, `Cyan`, `Blue`, `Purple`, `Pink`, `Red`, `Orange`, `White`) or a custom `#RRGGBB` hex input with a live color swatch.
   - Automatically scrolls long text (marquee), hides with `F1`, and toggles via keybind (`\`), Config/Controller buttons, or `/spotify hud`.
 - **Configurable Keybinds**
   - Bindings for opening the Config/Controller UI, toggling the HUD, Play/Pause, Next Track, and Previous Track under **Options -> Controls -> Key Binds -> Spotify Controller**, showing clean action-bar feedback above the hotbar.
@@ -41,16 +45,12 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Setup Guide
 
-1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create a new app (or open an existing one).
-2. Under **Redirect URIs**, add:
-   ```text
-   http://127.0.0.1:8888/callback
-   ```
-   *(Make sure to use `127.0.0.1`, not `localhost`. You can also click **Copy Redirect URL** in-game.)*
-3. Copy your app's **Client ID**.
-4. Place `spotify-controller-0.4.0.jar` and Fabric API into your Minecraft `mods/` folder and launch Minecraft `26.3`.
-5. In-game, press **`O`** (or run `/spotify config`), paste your **Client ID**, and click **Save & Connect Spotify**.
-6. Approve the permissions in the browser window that opens. Once redirected, return to Minecraft—your HUD widget, keybinds, and controller screen (`Z`) are ready!
+1. Place `spotify-controller-0.5.0.jar` and Fabric API into your Minecraft `mods/` folder and launch Minecraft `26.3`.
+2. Join a world—if no Client ID is set yet, you'll see a prompt in chat. Press **`O`** (or **`Z`**, or run `/spotify setup`) to open the **3-Step First-Time Setup Wizard** inside Minecraft:
+   - **Step 1 — Create App:** Click **Open Spotify Dashboard**, sign in, click **Create app**, give it any name/description, and check **Web API**.
+   - **Step 2 — Redirect URL:** Click **Copy Redirect URL** in-game to copy `http://127.0.0.1:8888/callback` *(use `127.0.0.1`, not `localhost`)*, paste it into **Redirect URIs**, click **Add**, accept the Terms of Service, and click **Save**.
+   - **Step 3 — Connect:** Open **Settings** in your Spotify app, copy the **Client ID**, paste it into Minecraft (**Paste Clipboard**), and click **Save & Connect Spotify**.
+3. Approve the permissions in the browser window that opens. Once redirected, click **Finish**—your HUD widget, keybinds, and controller screen (`Z`) are ready! *(You can reopen the wizard anytime via `/spotify setup` or the **Setup Guide** button in Config.)*
 
 ---
 
@@ -69,8 +69,9 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 ### Client Commands
 | Command | Description |
 | :--- | :--- |
-| `/spotify` or `/spotify player` | Open the interactive Spotify Controller screen |
-| `/spotify config` | Open the Config / HUD positioning screen |
+| `/spotify` or `/spotify player` | Open the interactive Spotify Controller screen (or Setup Wizard if Client ID is unset) |
+| `/spotify config` | Open the Config / HUD positioning screen (or Setup Wizard if Client ID is unset) |
+| `/spotify setup` | Open the interactive 3-step First-Time Setup Wizard |
 | `/spotify clientid <id>` | Set and save your Spotify Client ID from chat |
 | `/spotify login` | Start the browser OAuth PKCE login flow |
 | `/spotify status` | Print connection state and currently playing track in chat |
@@ -97,4 +98,4 @@ Requires **JDK 25**.
 .\gradlew.bat build
 ```
 
-The compiled mod jar will be output to `build/libs/spotify-controller-0.4.0.jar`.
+The compiled mod jar will be output to `build/libs/spotify-controller-0.5.0.jar`.

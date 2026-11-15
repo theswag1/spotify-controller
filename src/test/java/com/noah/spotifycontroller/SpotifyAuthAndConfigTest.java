@@ -4,6 +4,7 @@ import com.noah.spotifycontroller.api.SpotifyApiClient;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.noah.spotifycontroller.gui.SpotifySetupGuideScreen;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import org.junit.jupiter.api.Test;
@@ -197,5 +198,52 @@ class SpotifyAuthAndConfigTest {
         assertEquals(0L, SpotifyApiClient.computeSeekPositionMs(80, 100, 200, 200_000L));
         assertEquals(100_000L, SpotifyApiClient.computeSeekPositionMs(200, 100, 200, 200_000L));
         assertEquals(200_000L, SpotifyApiClient.computeSeekPositionMs(320, 100, 200, 200_000L));
+    }
+
+    @Test
+    void parsesAndPersistsAccentColorAndScaledHudBounds(@TempDir Path tempDir) {
+        assertEquals(0xFFFF4081, SpotifyConfig.parseHexColor("ff4081", SpotifyConfig.DEFAULT_ACCENT_COLOR_ARGB));
+        assertEquals(0xFF00E5FF, SpotifyConfig.parseHexColor("#00e5ff", SpotifyConfig.DEFAULT_ACCENT_COLOR_ARGB));
+        assertEquals(SpotifyConfig.DEFAULT_ACCENT_COLOR_ARGB, SpotifyConfig.parseHexColor("not-a-hex", SpotifyConfig.DEFAULT_ACCENT_COLOR_ARGB));
+        assertEquals("#00E5FF", SpotifyConfig.normalizeHexColor(" 00e5ff "));
+        assertEquals(SpotifyConfig.DEFAULT_ACCENT_COLOR_HEX, SpotifyConfig.normalizeHexColor("#12"));
+
+        assertEquals(0.5f, SpotifyConfig.clampHudScale(0.1f), 0.001f);
+        assertEquals(1.25f, SpotifyConfig.clampHudScale(1.24f), 0.001f);
+        assertEquals(2.0f, SpotifyConfig.clampHudScale(5.0f), 0.001f);
+
+        assertEquals(285, SpotifyHudOverlay.getScaledWidth(1.5f));
+        assertEquals(69, SpotifyHudOverlay.getScaledHeight(1.5f));
+        assertEquals(800 - 285 - 2, SpotifyHudOverlay.clampX(750, 800, 1.5f));
+        assertEquals(600 - 69 - 2, SpotifyHudOverlay.clampY(580, 600, 1.5f));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(280, 75, 10, 10, 1.5f));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(280, 75, 10, 10, 1.0f));
+
+        Path configPath = tempDir.resolve("hud_appearance.json");
+        SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
+        assertEquals(SpotifyConfig.DEFAULT_HUD_SCALE, config.hudScale, 0.001f);
+        assertEquals(SpotifyConfig.DEFAULT_ACCENT_COLOR_HEX, config.accentColorHex);
+
+        config.setHudScale(1.5f);
+        config.setAccentColorHex("bb86fc");
+        SpotifyConfig reloaded = SpotifyConfig.loadFrom(configPath);
+        assertEquals(1.5f, reloaded.hudScale, 0.001f);
+        assertEquals("#BB86FC", reloaded.accentColorHex);
+        assertEquals(0xFFBB86FC, reloaded.getAccentColorArgb());
+
+        reloaded.resetHudPosition();
+        assertEquals(SpotifyConfig.DEFAULT_HUD_SCALE, reloaded.hudScale, 0.001f);
+        assertEquals("#BB86FC", reloaded.accentColorHex);
+    }
+
+    @Test
+    void clampsSetupWizardStepBounds() {
+        assertEquals(1, SpotifySetupGuideScreen.clampStep(0));
+        assertEquals(1, SpotifySetupGuideScreen.clampStep(-5));
+        assertEquals(1, SpotifySetupGuideScreen.clampStep(1));
+        assertEquals(2, SpotifySetupGuideScreen.clampStep(2));
+        assertEquals(3, SpotifySetupGuideScreen.clampStep(3));
+        assertEquals(3, SpotifySetupGuideScreen.clampStep(4));
+        assertEquals(3, SpotifySetupGuideScreen.clampStep(99));
     }
 }

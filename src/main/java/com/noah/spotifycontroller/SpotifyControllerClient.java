@@ -11,6 +11,7 @@ import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.gui.SpotifyConfigScreen;
 import com.noah.spotifycontroller.gui.SpotifyControllerScreen;
+import com.noah.spotifycontroller.gui.SpotifySetupGuideScreen;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import net.fabricmc.api.ClientModInitializer;
@@ -55,6 +56,8 @@ public class SpotifyControllerClient implements ClientModInitializer {
 
     private static volatile boolean pendingOpenControllerScreen = false;
     private static volatile boolean pendingOpenConfigScreen = false;
+    private static volatile boolean pendingOpenSetupScreen = false;
+    private static boolean wasInWorld = false;
 
     @Override
     public void onInitializeClient() {
@@ -121,6 +124,8 @@ public class SpotifyControllerClient implements ClientModInitializer {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            checkSetupPromptOnWorldJoin(client);
+
             if (pendingOpenControllerScreen) {
                 pendingOpenControllerScreen = false;
                 openControllerScreen(client);
@@ -129,6 +134,11 @@ public class SpotifyControllerClient implements ClientModInitializer {
             if (pendingOpenConfigScreen) {
                 pendingOpenConfigScreen = false;
                 openConfigScreen(client);
+                return;
+            }
+            if (pendingOpenSetupScreen) {
+                pendingOpenSetupScreen = false;
+                openSetupGuideScreen(client);
                 return;
             }
             while (openControllerKey.consumeClick()) {
@@ -193,7 +203,23 @@ public class SpotifyControllerClient implements ClientModInitializer {
         return hudOverlay;
     }
 
+    private static void checkSetupPromptOnWorldJoin(Minecraft client) {
+        boolean inWorld = client.player != null && client.level != null;
+        if (inWorld && !wasInWorld && !config.hasClientId()) {
+            String keyName = openConfigKey.getTranslatedKeyMessage().getString();
+            client.player.sendSystemMessage(
+                    Component.literal("[Spotify] Not set up yet! Press [" + keyName + "] or run /spotify setup for the first-time setup guide.")
+                            .withStyle(ChatFormatting.YELLOW)
+            );
+        }
+        wasInWorld = inWorld;
+    }
+
     private static void openControllerScreen(Minecraft client) {
+        if (!config.hasClientId()) {
+            openSetupGuideScreen(client);
+            return;
+        }
         client.gui.setScreen(new SpotifyControllerScreen(
                 client.gui.screen(),
                 config,
@@ -206,7 +232,21 @@ public class SpotifyControllerClient implements ClientModInitializer {
     }
 
     private static void openConfigScreen(Minecraft client) {
+        if (!config.hasClientId()) {
+            openSetupGuideScreen(client);
+            return;
+        }
         client.gui.setScreen(new SpotifyConfigScreen(client.gui.screen(), config, authService, poller, hudOverlay));
+    }
+
+    private static void openSetupGuideScreen(Minecraft client) {
+        client.gui.setScreen(new SpotifySetupGuideScreen(
+                client.gui.screen(),
+                config,
+                authService,
+                poller,
+                hudOverlay
+        ));
     }
 
     private static void registerClientCommands() {
@@ -224,6 +264,11 @@ public class SpotifyControllerClient implements ClientModInitializer {
                         .then(ClientCommands.literal("config")
                                 .executes(context -> {
                                     pendingOpenConfigScreen = true;
+                                    return 1;
+                                }))
+                        .then(ClientCommands.literal("setup")
+                                .executes(context -> {
+                                    pendingOpenSetupScreen = true;
                                     return 1;
                                 }))
                         .then(ClientCommands.literal("clientid")

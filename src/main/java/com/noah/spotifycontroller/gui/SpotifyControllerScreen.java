@@ -247,6 +247,7 @@ public class SpotifyControllerScreen extends Screen {
         guiGraphics.fill(cardX, cardY, cardX + cardWidth, cardY + cardHeight, 0xCC181818);
         guiGraphics.outline(cardX, cardY, cardWidth, cardHeight, 0xFF2B2B2B);
 
+        int accentColor = config.getAccentColorArgb();
         int artX = left + 20;
         int artY = top + 34;
         Identifier artTexture = (track != null && albumArtManager != null)
@@ -256,7 +257,7 @@ public class SpotifyControllerScreen extends Screen {
             guiGraphics.blit(artTexture, artX, artY, artX + ALBUM_ART_SIZE, artY + ALBUM_ART_SIZE, 0.0f, 1.0f, 0.0f, 1.0f);
         } else {
             guiGraphics.fill(artX, artY, artX + ALBUM_ART_SIZE, artY + ALBUM_ART_SIZE, 0xFF222222);
-            guiGraphics.centeredText(this.font, Component.literal("♪"), artX + ALBUM_ART_SIZE / 2, artY + 28, 0xFF1DB954);
+            guiGraphics.centeredText(this.font, Component.literal("♪"), artX + ALBUM_ART_SIZE / 2, artY + 28, accentColor);
         }
         guiGraphics.outline(artX - 1, artY - 1, ALBUM_ART_SIZE + 2, ALBUM_ART_SIZE + 2, 0xFF3A3A3A);
 
@@ -288,7 +289,7 @@ public class SpotifyControllerScreen extends Screen {
 
             guiGraphics.fill(seekX, seekY, seekX + maxTextWidth, seekY + seekHeight, 0xFF333333);
             int fillColor = getEffectivePlaying(track)
-                    ? (seekHovered ? 0xFF1ED760 : 0xFF1DB954)
+                    ? accentColor
                     : 0xFFFFB74D;
             int filledWidth = (int) Math.min(maxTextWidth, Math.round((double) progressMs / durationMs * maxTextWidth));
             if (filledWidth > 0) {

@@ -24,6 +24,12 @@ public class SpotifyConfig {
     private static final int DEFAULT_POLL_INTERVAL_SECONDS = 3;
     public static final int DEFAULT_HUD_X = 10;
     public static final int DEFAULT_HUD_Y = 10;
+    public static final float DEFAULT_HUD_SCALE = 1.0f;
+    public static final float MIN_HUD_SCALE = 0.5f;
+    public static final float MAX_HUD_SCALE = 2.0f;
+    public static final float HUD_SCALE_STEP = 0.05f;
+    public static final String DEFAULT_ACCENT_COLOR_HEX = "#1DB954";
+    public static final int DEFAULT_ACCENT_COLOR_ARGB = 0xFF1DB954;
 
     private static volatile SpotifyConfig instance;
 
@@ -37,6 +43,8 @@ public class SpotifyConfig {
     public boolean hudEnabled = true;
     public int hudX = DEFAULT_HUD_X;
     public int hudY = DEFAULT_HUD_Y;
+    public float hudScale = DEFAULT_HUD_SCALE;
+    public String accentColorHex = DEFAULT_ACCENT_COLOR_HEX;
     public int pollIntervalSeconds = DEFAULT_POLL_INTERVAL_SECONDS;
 
     public SpotifyConfig() {
@@ -94,6 +102,10 @@ public class SpotifyConfig {
                 this.hudEnabled = loaded.hudEnabled;
                 this.hudX = loaded.hudX;
                 this.hudY = loaded.hudY;
+                this.hudScale = loaded.hudScale >= MIN_HUD_SCALE
+                        ? clampHudScale(loaded.hudScale)
+                        : DEFAULT_HUD_SCALE;
+                this.accentColorHex = normalizeHexColor(loaded.accentColorHex);
                 this.pollIntervalSeconds = loaded.pollIntervalSeconds >= 1
                         ? loaded.pollIntervalSeconds
                         : DEFAULT_POLL_INTERVAL_SECONDS;
@@ -114,6 +126,8 @@ public class SpotifyConfig {
             }
             this.clientId = sanitizeString(this.clientId).trim();
             this.callbackPort = isValidPort(this.callbackPort) ? this.callbackPort : DEFAULT_CALLBACK_PORT;
+            this.hudScale = clampHudScale(this.hudScale);
+            this.accentColorHex = normalizeHexColor(this.accentColorHex);
             this.pollIntervalSeconds = Math.max(1, this.pollIntervalSeconds);
             Files.writeString(configPath, GSON.toJson(this), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -135,7 +149,22 @@ public class SpotifyConfig {
     public synchronized void resetHudPosition() {
         this.hudX = DEFAULT_HUD_X;
         this.hudY = DEFAULT_HUD_Y;
+        this.hudScale = DEFAULT_HUD_SCALE;
         save();
+    }
+
+    public synchronized void setHudScale(float scale) {
+        this.hudScale = clampHudScale(scale);
+        save();
+    }
+
+    public synchronized void setAccentColorHex(String hex) {
+        this.accentColorHex = normalizeHexColor(hex);
+        save();
+    }
+
+    public synchronized int getAccentColorArgb() {
+        return parseHexColor(this.accentColorHex, DEFAULT_ACCENT_COLOR_ARGB);
     }
 
     public synchronized void updateTokens(String accessToken, String refreshToken, long expiresInSeconds) {
@@ -172,6 +201,48 @@ public class SpotifyConfig {
     public synchronized String getRedirectUri() {
         int port = isValidPort(callbackPort) ? callbackPort : DEFAULT_CALLBACK_PORT;
         return "http://127.0.0.1:" + port + "/callback";
+    }
+
+    public static float clampHudScale(float scale) {
+        if (Float.isNaN(scale) || Float.isInfinite(scale)) {
+            return DEFAULT_HUD_SCALE;
+        }
+        float clamped = Math.max(MIN_HUD_SCALE, Math.min(MAX_HUD_SCALE, scale));
+        return Math.round(clamped * 20.0f) / 20.0f;
+    }
+
+    public static boolean isValidHexColor(String hex) {
+        if (hex == null) {
+            return false;
+        }
+        String cleaned = stripHexPrefix(hex.trim());
+        return cleaned.matches("^[0-9A-Fa-f]{6}$");
+    }
+
+    public static String normalizeHexColor(String hex) {
+        if (!isValidHexColor(hex)) {
+            return DEFAULT_ACCENT_COLOR_HEX;
+        }
+        return "#" + stripHexPrefix(hex.trim()).toUpperCase();
+    }
+
+    public static int parseHexColor(String hex, int fallbackArgb) {
+        if (!isValidHexColor(hex)) {
+            return fallbackArgb;
+        }
+        String cleaned = stripHexPrefix(hex.trim());
+        int rgb = Integer.parseInt(cleaned, 16);
+        return 0xFF000000 | rgb;
+    }
+
+    private static String stripHexPrefix(String value) {
+        if (value.startsWith("#")) {
+            return value.substring(1);
+        }
+        if (value.startsWith("0x") || value.startsWith("0X")) {
+            return value.substring(2);
+        }
+        return value;
     }
 
     private static String sanitizeString(String value) {

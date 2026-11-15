@@ -14,7 +14,9 @@
   "screen.spotify_controller.config.connect": "Save & Connect Spotify",
   "screen.spotify_controller.config.hud_on": "HUD Widget: ON",
   "screen.spotify_controller.config.hud_off": "HUD Widget: OFF",
-  "screen.spotify_controller.config.reset_hud": "Reset HUD Position",
+  "screen.spotify_controller.config.reset_hud": "Reset HUD",
+  "screen.spotify_controller.config.setup_guide": "Setup Guide",
+  "screen.spotify_controller.setup.title": "Spotify Controller - First-Time Setup",
   "screen.spotify_controller.config.disconnect": "Disconnect",
   "screen.spotify_controller.config.done": "Done"
 }
