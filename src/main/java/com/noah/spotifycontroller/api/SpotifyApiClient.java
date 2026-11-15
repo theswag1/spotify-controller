@@ -85,12 +85,34 @@ public class SpotifyApiClient {
     }
 
     public CompletableFuture<ApiResult> setVolume(int volumePercent) {
-        int clamped = Math.max(0, Math.min(100, volumePercent));
+        int clamped = clampVolume(volumePercent);
         return sendControlRequest(
                 "PUT",
                 BASE_URL + "/volume?volume_percent=" + clamped,
                 "",
                 "Set volume to " + clamped + "%."
+        );
+    }
+
+    public CompletableFuture<ApiResult> setShuffle(boolean enabled) {
+        return sendControlRequest(
+                "PUT",
+                BASE_URL + "/shuffle?state=" + enabled,
+                "",
+                "Shuffle " + (enabled ? "enabled." : "disabled.")
+        );
+    }
+
+    public CompletableFuture<ApiResult> setRepeatMode(String repeatState) {
+        String normalized = (repeatState == null || repeatState.isBlank()) ? "off" : repeatState.trim().toLowerCase();
+        if (!normalized.equals("off") && !normalized.equals("context") && !normalized.equals("track")) {
+            normalized = "off";
+        }
+        return sendControlRequest(
+                "PUT",
+                BASE_URL + "/repeat?state=" + normalized,
+                "",
+                "Repeat mode set to " + formatRepeatLabel(normalized) + "."
         );
     }
 
@@ -102,6 +124,49 @@ public class SpotifyApiClient {
                 "",
                 "Seeked to " + TrackState.formatDuration(clamped) + "."
         );
+    }
+
+    public static int clampVolume(int volumePercent) {
+        return Math.max(0, Math.min(100, volumePercent));
+    }
+
+    public static String nextRepeatState(String currentRepeatState) {
+        if (currentRepeatState == null) {
+            return "context";
+        }
+        return switch (currentRepeatState.toLowerCase()) {
+            case "off" -> "context";
+            case "context" -> "track";
+            case "track" -> "off";
+            default -> "context";
+        };
+    }
+
+    public static String formatRepeatLabel(String repeatState) {
+        if (repeatState == null) {
+            return "OFF";
+        }
+        return switch (repeatState.toLowerCase()) {
+            case "context" -> "ALL";
+            case "track" -> "ONE";
+            default -> "OFF";
+        };
+    }
+
+    public static long computeSeekPositionMs(double mouseX, int barX, int barWidth, long durationMs) {
+        if (durationMs <= 0L || barWidth <= 0) {
+            return 0L;
+        }
+        double ratio = Math.max(0.0, Math.min(1.0, (mouseX - barX) / (double) barWidth));
+        return Math.round(ratio * durationMs);
+    }
+
+    public static int computeVolumePercent(double mouseX, int barX, int barWidth) {
+        if (barWidth <= 0) {
+            return 0;
+        }
+        double ratio = Math.max(0.0, Math.min(1.0, (mouseX - barX) / (double) barWidth));
+        return clampVolume((int) Math.round(ratio * 100.0));
     }
 
     private CompletableFuture<ApiResult> sendControlRequest(

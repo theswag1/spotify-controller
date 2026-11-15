@@ -1,5 +1,6 @@
 package com.noah.spotifycontroller;
 
+import com.noah.spotifycontroller.api.SpotifyApiClient;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
@@ -172,5 +173,29 @@ class SpotifyAuthAndConfigTest {
         SpotifyConfig resetReloaded = SpotifyConfig.loadFrom(configPath);
         assertEquals(SpotifyConfig.DEFAULT_HUD_X, resetReloaded.hudX);
         assertEquals(SpotifyConfig.DEFAULT_HUD_Y, resetReloaded.hudY);
+    }
+
+    @Test
+    void computesControllerRepeatVolumeAndSeekHelpers() {
+        assertEquals("context", SpotifyApiClient.nextRepeatState("off"));
+        assertEquals("track", SpotifyApiClient.nextRepeatState("context"));
+        assertEquals("off", SpotifyApiClient.nextRepeatState("track"));
+        assertEquals("context", SpotifyApiClient.nextRepeatState(null));
+
+        assertEquals("OFF", SpotifyApiClient.formatRepeatLabel("off"));
+        assertEquals("ALL", SpotifyApiClient.formatRepeatLabel("context"));
+        assertEquals("ONE", SpotifyApiClient.formatRepeatLabel("track"));
+
+        assertEquals(0, SpotifyApiClient.clampVolume(-15));
+        assertEquals(65, SpotifyApiClient.clampVolume(65));
+        assertEquals(100, SpotifyApiClient.clampVolume(150));
+
+        assertEquals(0, SpotifyApiClient.computeVolumePercent(50, 100, 200));
+        assertEquals(50, SpotifyApiClient.computeVolumePercent(200, 100, 200));
+        assertEquals(100, SpotifyApiClient.computeVolumePercent(350, 100, 200));
+
+        assertEquals(0L, SpotifyApiClient.computeSeekPositionMs(80, 100, 200, 200_000L));
+        assertEquals(100_000L, SpotifyApiClient.computeSeekPositionMs(200, 100, 200, 200_000L));
+        assertEquals(200_000L, SpotifyApiClient.computeSeekPositionMs(320, 100, 200, 200_000L));
     }
 }

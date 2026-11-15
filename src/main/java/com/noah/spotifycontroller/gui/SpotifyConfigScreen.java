@@ -160,7 +160,7 @@ public class SpotifyConfigScreen extends Screen {
         );
         guiGraphics.text(
                 this.font,
-                Component.literal("Redirect URI: " + config.getRedirectUri()),
+                Component.literal("Redirect URL: " + config.getRedirectUri()),
                 left,
                 top + 52,
                 0xFFA0A0A0
@@ -320,7 +320,7 @@ public class SpotifyConfigScreen extends Screen {
     private void copyRedirectUri() {
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         client.keyboardHandler.setClipboard(config.getRedirectUri());
-        this.statusOverride = "Copied Redirect URI to clipboard!";
+        this.statusOverride = "Copied Redirect URL to clipboard!";
     }
 
     private void saveAndConnect() {
