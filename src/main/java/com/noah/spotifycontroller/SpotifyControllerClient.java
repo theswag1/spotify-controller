@@ -118,8 +118,12 @@ public class SpotifyControllerClient implements ClientModInitializer {
         return poller;
     }
 
+    public static SpotifyHudOverlay getHudOverlay() {
+        return hudOverlay;
+    }
+
     private static void openConfigScreen(Minecraft client) {
-        client.gui.setScreen(new SpotifyConfigScreen(client.gui.screen(), config, authService, poller));
+        client.gui.setScreen(new SpotifyConfigScreen(client.gui.screen(), config, authService, poller, hudOverlay));
     }
 
     private static void registerClientCommands() {

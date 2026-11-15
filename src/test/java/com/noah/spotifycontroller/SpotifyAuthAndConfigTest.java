@@ -144,4 +144,33 @@ class SpotifyAuthAndConfigTest {
         assertEquals(24, midOffset);
         assertEquals(48, SpotifyHudOverlay.computeScrollOffset(184, 136, 4000L));
     }
+
+    @Test
+    void clampsAndPersistsHudPositionAndHitTestsCardBounds(@TempDir Path tempDir) {
+        assertEquals(2, SpotifyHudOverlay.clampX(-50, 800));
+        assertEquals(800 - SpotifyHudOverlay.CARD_WIDTH - 2, SpotifyHudOverlay.clampX(2000, 800));
+        assertEquals(2, SpotifyHudOverlay.clampY(-10, 600));
+        assertEquals(600 - SpotifyHudOverlay.CARD_HEIGHT - 2, SpotifyHudOverlay.clampY(2000, 600));
+
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10, 20, 10, 20));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH - 1, 20 + SpotifyHudOverlay.CARD_HEIGHT - 1, 10, 20));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(9, 20, 10, 20));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH, 20, 10, 20));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.CARD_HEIGHT, 10, 20));
+
+        Path configPath = tempDir.resolve("hud_position.json");
+        SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
+        assertEquals(SpotifyConfig.DEFAULT_HUD_X, config.hudX);
+        assertEquals(SpotifyConfig.DEFAULT_HUD_Y, config.hudY);
+
+        config.setHudPosition(240, 135);
+        SpotifyConfig reloaded = SpotifyConfig.loadFrom(configPath);
+        assertEquals(240, reloaded.hudX);
+        assertEquals(135, reloaded.hudY);
+
+        reloaded.resetHudPosition();
+        SpotifyConfig resetReloaded = SpotifyConfig.loadFrom(configPath);
+        assertEquals(SpotifyConfig.DEFAULT_HUD_X, resetReloaded.hudX);
+        assertEquals(SpotifyConfig.DEFAULT_HUD_Y, resetReloaded.hudY);
+    }
 }

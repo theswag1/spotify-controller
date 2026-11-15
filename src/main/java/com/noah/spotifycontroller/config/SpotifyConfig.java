@@ -22,6 +22,8 @@ public class SpotifyConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int DEFAULT_CALLBACK_PORT = 8888;
     private static final int DEFAULT_POLL_INTERVAL_SECONDS = 3;
+    public static final int DEFAULT_HUD_X = 10;
+    public static final int DEFAULT_HUD_Y = 10;
 
     private static volatile SpotifyConfig instance;
 
@@ -33,8 +35,8 @@ public class SpotifyConfig {
     public String refreshToken = "";
     public long tokenExpiresAtEpochSeconds = 0L;
     public boolean hudEnabled = true;
-    public int hudX = 10;
-    public int hudY = 10;
+    public int hudX = DEFAULT_HUD_X;
+    public int hudY = DEFAULT_HUD_Y;
     public int pollIntervalSeconds = DEFAULT_POLL_INTERVAL_SECONDS;
 
     public SpotifyConfig() {
@@ -121,6 +123,18 @@ public class SpotifyConfig {
 
     public synchronized void setClientId(String clientId) {
         this.clientId = sanitizeString(clientId).trim();
+        save();
+    }
+
+    public synchronized void setHudPosition(int x, int y) {
+        this.hudX = x;
+        this.hudY = y;
+        save();
+    }
+
+    public synchronized void resetHudPosition() {
+        this.hudX = DEFAULT_HUD_X;
+        this.hudY = DEFAULT_HUD_Y;
         save();
     }
 

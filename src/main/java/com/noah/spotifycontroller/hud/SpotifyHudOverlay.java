@@ -3,6 +3,7 @@ package com.noah.spotifycontroller.hud;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.noah.spotifycontroller.gui.SpotifyConfigScreen;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -38,7 +39,9 @@ public class SpotifyHudOverlay implements HudElement {
     @Override
     public void extractRenderState(GuiGraphicsExtractor guiGraphics, DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
-        if (!config.hudEnabled || client.gui.hud.isHidden()) {
+        if (!config.hudEnabled
+                || client.gui.hud.isHidden()
+                || client.gui.screen() instanceof SpotifyConfigScreen) {
             return;
         }
 
@@ -47,9 +50,15 @@ public class SpotifyHudOverlay implements HudElement {
             return;
         }
 
-        int x = Math.max(2, Math.min(config.hudX, Math.max(2, guiGraphics.guiWidth() - CARD_WIDTH - 2)));
-        int y = Math.max(2, Math.min(config.hudY, Math.max(2, guiGraphics.guiHeight() - CARD_HEIGHT - 2)));
+        int x = clampX(config.hudX, guiGraphics.guiWidth());
+        int y = clampY(config.hudY, guiGraphics.guiHeight());
+        renderCard(guiGraphics, client.font, track, x, y);
+    }
 
+    /**
+     * Renders the Spotify "Now Playing" card at the given screen coordinates.
+     */
+    public void renderCard(GuiGraphicsExtractor guiGraphics, Font font, TrackState track, int x, int y) {
         int accentColor = track.isPlaying() ? 0xFF1DB954 : 0xFFFFB74D;
 
         // Card background, border, and playback-state accent strip
@@ -65,7 +74,7 @@ public class SpotifyHudOverlay implements HudElement {
             guiGraphics.blit(artTexture, artX, artY, artX + ART_SIZE, artY + ART_SIZE, 0.0f, 1.0f, 0.0f, 1.0f);
         } else {
             guiGraphics.fill(artX, artY, artX + ART_SIZE, artY + ART_SIZE, 0xFF222222);
-            guiGraphics.centeredText(client.font, Component.literal("♪"), artX + ART_SIZE / 2, y + 19, 0xFF1DB954);
+            guiGraphics.centeredText(font, Component.literal("♪"), artX + ART_SIZE / 2, y + 19, 0xFF1DB954);
         }
         guiGraphics.outline(artX - 1, artY - 1, ART_SIZE + 2, ART_SIZE + 2, 0xFF333333);
 
@@ -73,8 +82,8 @@ public class SpotifyHudOverlay implements HudElement {
         int textX = x + 48;
         int maxTextWidth = CARD_WIDTH - 54;
         long nowMillis = System.currentTimeMillis();
-        drawScrollingText(guiGraphics, client.font, track.trackName(), textX, y + 6, maxTextWidth, 0xFFFFFFFF, nowMillis);
-        drawScrollingText(guiGraphics, client.font, track.artistName(), textX, y + 18, maxTextWidth, 0xFFB3B3B3, nowMillis);
+        drawScrollingText(guiGraphics, font, track.trackName(), textX, y + 6, maxTextWidth, 0xFFFFFFFF, nowMillis);
+        drawScrollingText(guiGraphics, font, track.artistName(), textX, y + 18, maxTextWidth, 0xFFB3B3B3, nowMillis);
 
         // Interpolated progress timestamps & bar
         long progressMs = track.getInterpolatedProgressMs();
@@ -82,8 +91,8 @@ public class SpotifyHudOverlay implements HudElement {
 
         String elapsedText = TrackState.formatDuration(progressMs);
         String totalText = (track.isPlaying() ? "" : "⏸ ") + TrackState.formatDuration(track.durationMs());
-        guiGraphics.text(client.font, elapsedText, textX, y + 30, 0xFF9E9E9E);
-        guiGraphics.text(client.font, totalText, textX + maxTextWidth - client.font.width(totalText), y + 30, 0xFF9E9E9E);
+        guiGraphics.text(font, elapsedText, textX, y + 30, 0xFF9E9E9E);
+        guiGraphics.text(font, totalText, textX + maxTextWidth - font.width(totalText), y + 30, 0xFF9E9E9E);
 
         int barY = y + 40;
         guiGraphics.fill(textX, barY, textX + maxTextWidth, barY + 2, 0xFF333333);
@@ -91,6 +100,30 @@ public class SpotifyHudOverlay implements HudElement {
         if (filledWidth > 0) {
             guiGraphics.fill(textX, barY, textX + filledWidth, barY + 2, accentColor);
         }
+    }
+
+    /**
+     * Clamps the HUD X coordinate inside the visible screen bounds.
+     */
+    public static int clampX(int x, int screenWidth) {
+        return Math.max(2, Math.min(x, Math.max(2, screenWidth - CARD_WIDTH - 2)));
+    }
+
+    /**
+     * Clamps the HUD Y coordinate inside the visible screen bounds.
+     */
+    public static int clampY(int y, int screenHeight) {
+        return Math.max(2, Math.min(y, Math.max(2, screenHeight - CARD_HEIGHT - 2)));
+    }
+
+    /**
+     * Returns whether the pointer coordinates fall within the HUD card rectangle.
+     */
+    public static boolean isPointInsideCard(double mouseX, double mouseY, int cardX, int cardY) {
+        return mouseX >= cardX
+                && mouseX < cardX + CARD_WIDTH
+                && mouseY >= cardY
+                && mouseY < cardY + CARD_HEIGHT;
     }
 
     /**

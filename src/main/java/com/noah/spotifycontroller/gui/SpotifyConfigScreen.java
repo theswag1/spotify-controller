@@ -1,14 +1,19 @@
 package com.noah.spotifycontroller.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
+import com.noah.spotifycontroller.SpotifyControllerClient;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
@@ -16,7 +21,8 @@ import java.util.List;
 
 /**
  * In-game configuration screen for entering the Spotify Developer Client ID,
- * copying the loopback redirect URI, and authenticating via OAuth PKCE.
+ * copying the loopback redirect URI, authenticating via OAuth PKCE, and
+ * positioning the in-game HUD widget via drag-and-drop.
  */
 public class SpotifyConfigScreen extends Screen {
     private static final int CONTENT_WIDTH = 320;
@@ -27,11 +33,15 @@ public class SpotifyConfigScreen extends Screen {
     private final SpotifyConfig config;
     private final SpotifyAuthService authService;
     private final SpotifyPoller poller;
+    private final SpotifyHudOverlay hudOverlay;
 
     private EditBox clientIdBox;
     private Button disconnectButton;
     private String statusOverride;
     private boolean authInProgress = false;
+    private boolean draggingHud = false;
+    private int dragOffsetX = 0;
+    private int dragOffsetY = 0;
 
     public SpotifyConfigScreen(
             Screen parent,
@@ -39,11 +49,22 @@ public class SpotifyConfigScreen extends Screen {
             SpotifyAuthService authService,
             SpotifyPoller poller
     ) {
+        this(parent, config, authService, poller, SpotifyControllerClient.getHudOverlay());
+    }
+
+    public SpotifyConfigScreen(
+            Screen parent,
+            SpotifyConfig config,
+            SpotifyAuthService authService,
+            SpotifyPoller poller,
+            SpotifyHudOverlay hudOverlay
+    ) {
         super(Component.translatable("screen.spotify_controller.config.title"));
         this.parent = parent;
         this.config = config;
         this.authService = authService;
         this.poller = poller;
+        this.hudOverlay = hudOverlay;
     }
 
     @Override
@@ -103,9 +124,20 @@ public class SpotifyConfigScreen extends Screen {
 
         addRenderableWidget(
                 Button.builder(
+                        Component.translatable("screen.spotify_controller.config.reset_hud"),
+                        button -> {
+                            config.resetHudPosition();
+                            this.draggingHud = false;
+                            this.statusOverride = "Reset HUD position to (" + config.hudX + ", " + config.hudY + ").";
+                        }
+                ).bounds(left, top + 124, HALF_BUTTON_WIDTH, 20).build()
+        );
+
+        addRenderableWidget(
+                Button.builder(
                         Component.translatable("screen.spotify_controller.config.done"),
                         button -> onClose()
-                ).bounds(left, top + 124, CONTENT_WIDTH, 20).build()
+                ).bounds(left + HALF_BUTTON_WIDTH + BUTTON_GAP, top + 124, HALF_BUTTON_WIDTH, 20).build()
         );
 
         updateButtonStates();
@@ -176,13 +208,113 @@ public class SpotifyConfigScreen extends Screen {
                     0xFF888888
             );
         }
+
+        renderDraggableHudPreview(guiGraphics, mouseX, mouseY, track);
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width);
+            int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height);
+            if (SpotifyHudOverlay.isPointInsideCard(event.x(), event.y(), hudX, hudY)) {
+                this.draggingHud = true;
+                this.dragOffsetX = (int) Math.round(event.x()) - hudX;
+                this.dragOffsetY = (int) Math.round(event.y()) - hudY;
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (this.draggingHud && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            config.hudX = SpotifyHudOverlay.clampX((int) Math.round(event.x()) - dragOffsetX, this.width);
+            config.hudY = SpotifyHudOverlay.clampY((int) Math.round(event.y()) - dragOffsetY, this.height);
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (this.draggingHud && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            this.draggingHud = false;
+            config.save();
+            this.statusOverride = "Saved HUD position (" + config.hudX + ", " + config.hudY + ").";
+            return true;
+        }
+        return super.mouseReleased(event);
     }
 
     @Override
     public void onClose() {
+        if (this.draggingHud) {
+            this.draggingHud = false;
+            config.save();
+        }
         persistEditedClientIdIfChanged();
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         client.gui.setScreen(this.parent);
+    }
+
+    private void renderDraggableHudPreview(
+            GuiGraphicsExtractor guiGraphics,
+            int mouseX,
+            int mouseY,
+            TrackState track
+    ) {
+        int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width);
+        int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height);
+
+        TrackState displayTrack = track != null ? track : new TrackState(
+                "preview",
+                "Spotify HUD Preview",
+                "Drag anywhere to move",
+                "Spotify Controller",
+                "",
+                83_000L,
+                215_000L,
+                true,
+                100,
+                false,
+                "off",
+                System.currentTimeMillis()
+        );
+
+        if (hudOverlay != null) {
+            hudOverlay.renderCard(guiGraphics, this.font, displayTrack, hudX, hudY);
+        }
+
+        boolean hudHovered = SpotifyHudOverlay.isPointInsideCard(mouseX, mouseY, hudX, hudY);
+        int borderColor = (draggingHud || hudHovered) ? 0xFF1DB954 : 0xAA1DB954;
+        guiGraphics.outline(
+                hudX - 1,
+                hudY - 1,
+                SpotifyHudOverlay.CARD_WIDTH + 2,
+                SpotifyHudOverlay.CARD_HEIGHT + 2,
+                borderColor
+        );
+
+        if (draggingHud || hudHovered) {
+            guiGraphics.requestCursor(CursorTypes.RESIZE_ALL);
+        }
+
+        String baseCaption = draggingHud
+                ? "HUD Position: " + hudX + ", " + hudY
+                : "Drag to move HUD (" + hudX + ", " + hudY + ")";
+        String caption = config.hudEnabled ? baseCaption : baseCaption + " [OFF]";
+        int badgeHeight = this.font.lineHeight + 4;
+        int badgeWidth = this.font.width(caption) + 8;
+        int badgeX = Math.max(2, Math.min(hudX, Math.max(2, this.width - badgeWidth - 2)));
+        int badgeY = (hudY + SpotifyHudOverlay.CARD_HEIGHT + 3 + badgeHeight <= this.height - 2)
+                ? hudY + SpotifyHudOverlay.CARD_HEIGHT + 3
+                : Math.max(2, hudY - badgeHeight - 3);
+
+        guiGraphics.fill(badgeX, badgeY, badgeX + badgeWidth, badgeY + badgeHeight, 0xCC121212);
+        guiGraphics.outline(badgeX, badgeY, badgeWidth, badgeHeight, borderColor);
+        guiGraphics.text(this.font, caption, badgeX + 4, badgeY + 2, draggingHud ? 0xFF1DB954 : 0xFFE0E0E0);
     }
 
     private void copyRedirectUri() {
