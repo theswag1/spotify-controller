@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
+import com.noah.spotifycontroller.util.SpotifyI18n;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +60,7 @@ public class SpotifyApiClient {
             return CompletableFuture.completedFuture(new PlaybackPollResult(
                     PlaybackPollStatus.RATE_LIMITED,
                     Optional.empty(),
-                    "Rate limited by Spotify; pausing polls briefly"
+                    SpotifyI18n.translate("status.spotify_controller.rate_limited")
             ));
         }
         return sendAuthorizedRequest("GET", PLAYBACK_STATE_URL, null, true)
@@ -68,7 +69,7 @@ public class SpotifyApiClient {
                         return new PlaybackPollResult(
                                 PlaybackPollStatus.UNAUTHENTICATED,
                                 Optional.empty(),
-                                "Not connected — click Connect Spotify or run /spotify login"
+                                SpotifyI18n.translate("status.spotify_controller.not_connected_hint")
                         );
                     }
                     int status = response.statusCode();
@@ -76,35 +77,38 @@ public class SpotifyApiClient {
                         return new PlaybackPollResult(
                                 PlaybackPollStatus.NO_PLAYBACK,
                                 Optional.empty(),
-                                "Connected (no active Spotify playback)"
+                                SpotifyI18n.translate("status.spotify_controller.no_playback")
                         );
                     }
                     if (status >= 200 && status < 300) {
                         Optional<TrackState> parsed = TrackState.fromPlayerJson(response.body());
                         if (parsed.isPresent()) {
                             TrackState track = parsed.get();
-                            String msg = (track.isPlaying() ? "Playing: " : "Paused: ")
-                                    + track.trackName() + " - " + track.artistName();
+                            String msg = SpotifyI18n.translate(
+                                    track.isPlaying() ? "status.spotify_controller.playing" : "status.spotify_controller.paused",
+                                    track.trackName(),
+                                    track.artistName()
+                            );
                             return new PlaybackPollResult(PlaybackPollStatus.ACTIVE, parsed, msg);
                         }
                         return new PlaybackPollResult(
                                 PlaybackPollStatus.NO_PLAYBACK,
                                 Optional.empty(),
-                                "Connected (no active Spotify playback)"
+                                SpotifyI18n.translate("status.spotify_controller.no_playback")
                         );
                     }
                     if (status == 401) {
                         return new PlaybackPollResult(
                                 PlaybackPollStatus.UNAUTHENTICATED,
                                 Optional.empty(),
-                                "Spotify session expired — reconnect via /spotify login"
+                                SpotifyI18n.translate("status.spotify_controller.session_expired")
                         );
                     }
                     if (status == 429) {
                         return new PlaybackPollResult(
                                 PlaybackPollStatus.RATE_LIMITED,
                                 Optional.empty(),
-                                "Rate limited by Spotify; pausing polls briefly"
+                                SpotifyI18n.translate("status.spotify_controller.rate_limited")
                         );
                     }
                     LOGGER.debug("GET /me/player returned HTTP {}: {}", status, response.body());
@@ -117,11 +121,11 @@ public class SpotifyApiClient {
     }
 
     public CompletableFuture<ApiResult> play() {
-        return sendControlRequest("PUT", BASE_URL + "/play", "{}", "Resumed playback.");
+        return sendControlRequest("PUT", BASE_URL + "/play", "{}", SpotifyI18n.translate("status.spotify_controller.resumed"));
     }
 
     public CompletableFuture<ApiResult> pause() {
-        return sendControlRequest("PUT", BASE_URL + "/pause", "", "Paused playback.");
+        return sendControlRequest("PUT", BASE_URL + "/pause", "", SpotifyI18n.translate("status.spotify_controller.paused_action"));
     }
 
     public CompletableFuture<ApiResult> togglePlayPause(TrackState current) {
@@ -132,11 +136,11 @@ public class SpotifyApiClient {
     }
 
     public CompletableFuture<ApiResult> nextTrack() {
-        return sendControlRequest("POST", BASE_URL + "/next", "", "Skipped to next track.");
+        return sendControlRequest("POST", BASE_URL + "/next", "", SpotifyI18n.translate("status.spotify_controller.next_track"));
     }
 
     public CompletableFuture<ApiResult> previousTrack() {
-        return sendControlRequest("POST", BASE_URL + "/previous", "", "Returned to previous track.");
+        return sendControlRequest("POST", BASE_URL + "/previous", "", SpotifyI18n.translate("status.spotify_controller.prev_track"));
     }
 
     public CompletableFuture<ApiResult> setVolume(int volumePercent) {
@@ -145,7 +149,7 @@ public class SpotifyApiClient {
                 "PUT",
                 BASE_URL + "/volume?volume_percent=" + clamped,
                 "",
-                "Set volume to " + clamped + "%."
+                SpotifyI18n.translate("status.spotify_controller.volume_set", clamped)
         );
     }
 
@@ -154,7 +158,7 @@ public class SpotifyApiClient {
                 "PUT",
                 BASE_URL + "/shuffle?state=" + enabled,
                 "",
-                "Shuffle " + (enabled ? "enabled." : "disabled.")
+                SpotifyI18n.translate(enabled ? "status.spotify_controller.shuffle_enabled" : "status.spotify_controller.shuffle_disabled")
         );
     }
 
@@ -167,7 +171,7 @@ public class SpotifyApiClient {
                 "PUT",
                 BASE_URL + "/repeat?state=" + normalized,
                 "",
-                "Repeat mode set to " + formatRepeatLabel(normalized) + "."
+                SpotifyI18n.translate("status.spotify_controller.repeat_set", SpotifyI18n.translate(getRepeatTranslationKey(normalized)))
         );
     }
 
@@ -177,8 +181,19 @@ public class SpotifyApiClient {
                 "PUT",
                 BASE_URL + "/seek?position_ms=" + clamped,
                 "",
-                "Seeked to " + TrackState.formatDuration(clamped) + "."
+                SpotifyI18n.translate("status.spotify_controller.seeked", TrackState.formatDuration(clamped))
         );
+    }
+
+    public static String getRepeatTranslationKey(String repeatState) {
+        if (repeatState == null) {
+            return "screen.spotify_controller.controller.repeat.off";
+        }
+        return switch (repeatState.toLowerCase()) {
+            case "context" -> "screen.spotify_controller.controller.repeat.all";
+            case "track" -> "screen.spotify_controller.controller.repeat.one";
+            default -> "screen.spotify_controller.controller.repeat.off";
+        };
     }
 
     public static int clampVolume(int volumePercent) {
@@ -233,14 +248,14 @@ public class SpotifyApiClient {
         if (isRateLimited()) {
             long waitSec = Math.max(1L, (rateLimitedUntilMillis - System.currentTimeMillis()) / 1000L);
             return CompletableFuture.completedFuture(
-                    new ApiResult(false, "Spotify rate limit active. Retry in " + waitSec + "s.")
+                    new ApiResult(false, SpotifyI18n.translate("status.spotify_controller.rate_limit_Wait", waitSec))
             );
         }
 
         return sendAuthorizedRequest(method, url, jsonBody, true)
                 .thenApply(response -> {
                     if (response == null) {
-                        return new ApiResult(false, "Not connected to Spotify. Connect in the Config screen or via /spotify login.");
+                        return new ApiResult(false, SpotifyI18n.translate("status.spotify_controller.not_connected_action"));
                     }
                     int status = response.statusCode();
                     if (status >= 200 && status < 300) {
@@ -250,7 +265,7 @@ public class SpotifyApiClient {
                 })
                 .exceptionally(ex -> {
                     LOGGER.warn("Spotify API request {} {} failed", method, url, ex);
-                    return new ApiResult(false, "Spotify API request failed: " + ex.getMessage());
+                    return new ApiResult(false, SpotifyI18n.translate("status.spotify_controller.request_failed", ex.getMessage()));
                 });
     }
 
@@ -329,21 +344,21 @@ public class SpotifyApiClient {
         String apiReason = extractSpotifyErrorReason(response.body());
 
         return switch (status) {
-            case 401 -> "Spotify session expired. Please reconnect via /spotify login.";
+            case 401 -> SpotifyI18n.translate("status.spotify_controller.error_401");
             case 403 -> {
                 if ("PREMIUM_REQUIRED".equalsIgnoreCase(apiReason)
                         || apiMessage.toLowerCase().contains("premium")) {
-                    yield "Spotify Premium is required for playback control.";
+                    yield SpotifyI18n.translate("status.spotify_controller.error_403_premium");
                 }
                 yield apiMessage.isEmpty()
-                        ? "Spotify denied permission for this action."
-                        : "Spotify error (403): " + apiMessage;
+                        ? SpotifyI18n.translate("status.spotify_controller.error_403_denied")
+                        : SpotifyI18n.translate("status.spotify_controller.error_403_detail", apiMessage);
             }
-            case 404 -> "No active Spotify device found — start playing on Spotify first.";
-            case 429 -> "Spotify rate limit reached. Please wait " + parseRetryAfterSeconds(response) + "s.";
+            case 404 -> SpotifyI18n.translate("status.spotify_controller.error_404_no_device");
+            case 429 -> SpotifyI18n.translate("status.spotify_controller.error_429", parseRetryAfterSeconds(response));
             default -> apiMessage.isEmpty()
-                    ? "Spotify API error (HTTP " + status + ")."
-                    : "Spotify API error (" + status + "): " + apiMessage;
+                    ? SpotifyI18n.translate("status.spotify_controller.error_http", status)
+                    : SpotifyI18n.translate("status.spotify_controller.error_http_detail", status, apiMessage);
         };
     }
 

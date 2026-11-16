@@ -1,12 +1,15 @@
 package com.noah.spotifycontroller;
 
 import com.noah.spotifycontroller.api.SpotifyApiClient;
+import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.gui.SpotifySetupGuideScreen;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
+import com.noah.spotifycontroller.util.SpotifyI18n;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,6 +19,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -28,10 +32,13 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpotifyAuthAndConfigTest {
@@ -331,5 +338,115 @@ class SpotifyAuthAndConfigTest {
         } finally {
             authService.shutdown();
         }
+    }
+
+    @Test
+    void throttlesRepeatedAlbumArtDownloadsAfterFailure() throws Exception {
+        AtomicInteger requestCount = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), 0), 0);
+        server.createContext("/broken.png", exchange -> {
+            requestCount.incrementAndGet();
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            AtomicLong fakeNowMs = new AtomicLong(10_000L);
+            AlbumArtManager manager = new AlbumArtManager(
+                    HttpClient.newHttpClient(),
+                    AlbumArtManager.DEFAULT_RETRY_COOLDOWN_MS,
+                    fakeNowMs::get
+            );
+            String brokenUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/broken.png";
+
+            assertNull(manager.getOrLoadTexture(brokenUrl));
+
+            long deadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!manager.isInFailureCooldown(brokenUrl) && System.nanoTime() < deadlineNs) {
+                Thread.sleep(5);
+            }
+            assertTrue(manager.isInFailureCooldown(brokenUrl), "Failed URL should enter retry cooldown");
+
+            for (int frame = 0; frame < 60; frame++) {
+                assertNull(manager.getOrLoadTexture(brokenUrl));
+            }
+            assertEquals(1, requestCount.get(), "Failed URL should not be re-requested every frame during cooldown");
+
+            fakeNowMs.addAndGet(AlbumArtManager.DEFAULT_RETRY_COOLDOWN_MS);
+            assertFalse(manager.isInFailureCooldown(brokenUrl));
+            assertNull(manager.getOrLoadTexture(brokenUrl));
+
+            long retryDeadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!manager.isInFailureCooldown(brokenUrl) && System.nanoTime() < retryDeadlineNs) {
+                Thread.sleep(5);
+            }
+            assertEquals(2, requestCount.get(), "Failed URL should retry once after cooldown expires");
+
+            String invalidSchemeUrl = "ftp://invalid.local/art.png";
+            assertNull(manager.getOrLoadTexture(invalidSchemeUrl));
+            assertTrue(manager.isInFailureCooldown(invalidSchemeUrl));
+
+            manager.clear();
+            assertFalse(manager.isInFailureCooldown(brokenUrl));
+            assertFalse(manager.isInFailureCooldown(invalidSchemeUrl));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void computesAdaptiveAndDynamicPollIntervals(@TempDir Path tempDir) {
+        TrackState playingTrack = new TrackState(
+                "track-1", "Sweden", "C418", "Minecraft - Volume Alpha", "",
+                10_000L, 200_000L, true, 80, false, "off", System.currentTimeMillis()
+        );
+        TrackState pausedTrack = new TrackState(
+                "track-1", "Sweden", "C418", "Minecraft - Volume Alpha", "",
+                10_000L, 200_000L, false, 80, false, "off", System.currentTimeMillis()
+        );
+
+        assertEquals(3, SpotifyPoller.computeEffectivePollIntervalSeconds(3, playingTrack, true, true, false));
+        assertEquals(SpotifyPoller.IDLE_PAUSED_POLL_SECONDS,
+                SpotifyPoller.computeEffectivePollIntervalSeconds(3, pausedTrack, true, true, false));
+        assertEquals(SpotifyPoller.IDLE_NO_PLAYBACK_POLL_SECONDS,
+                SpotifyPoller.computeEffectivePollIntervalSeconds(3, null, true, true, false));
+        assertEquals(SpotifyPoller.IDLE_MENU_POLL_SECONDS,
+                SpotifyPoller.computeEffectivePollIntervalSeconds(3, playingTrack, false, true, false));
+        assertEquals(3,
+                SpotifyPoller.computeEffectivePollIntervalSeconds(3, playingTrack, false, true, true));
+        assertEquals(SpotifyPoller.IDLE_UNFOCUSED_POLL_SECONDS,
+                SpotifyPoller.computeEffectivePollIntervalSeconds(3, playingTrack, true, false, true));
+        assertEquals(15,
+                SpotifyPoller.computeEffectivePollIntervalSeconds(15, pausedTrack, false, false, false));
+
+        Path configPath = tempDir.resolve("dynamic_poll.json");
+        SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
+        HttpClient httpClient = HttpClient.newHttpClient();
+        SpotifyAuthService authService = new SpotifyAuthService(config, httpClient, uri -> {});
+        SpotifyPoller poller = new SpotifyPoller(config, new SpotifyApiClient(authService, httpClient));
+        try {
+            assertEquals(SpotifyPoller.IDLE_NO_PLAYBACK_POLL_SECONDS, poller.getEffectivePollIntervalSeconds());
+
+            config.setPollIntervalSeconds(12);
+            assertEquals(12, poller.getEffectivePollIntervalSeconds());
+
+            config.setPollIntervalSeconds(15);
+            assertEquals(15, poller.getEffectivePollIntervalSeconds());
+        } finally {
+            poller.stop();
+            authService.shutdown();
+        }
+    }
+
+    @Test
+    void loadsCompleteEnglishTranslationsFromResourceFile() {
+        assertTrue(SpotifyI18n.getFallbackTranslations().size() >= 90);
+        assertEquals("Set volume to 75%.", SpotifyI18n.translate("status.spotify_controller.volume_set", 75));
+        assertEquals(
+                "[Spotify] Not set up yet! Press [O] or run /spotify setup for the first-time setup guide.",
+                SpotifyI18n.translate("chat.spotify_controller.setup_prompt", "O")
+        );
+        assertEquals("HUD Widget: ON", SpotifyI18n.translate("screen.spotify_controller.config.hud_on"));
     }
 }

@@ -33,16 +33,18 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Requirements
 
-- **Minecraft:** `26.3`, `26.2`, or `26.1.x` (`26.1`–`26.1.2`)
+- **Minecraft:** `26.3`, `26.2`, `26.1.x` (`26.1`–`26.1.2`), or `1.21` / `1.21.1`
 - **Fabric:**
-  - `spotify-controller-0.5.2-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
-  - `spotify-controller-0.5.2-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
-  - `spotify-controller-0.5.2-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
+  - `spotify-controller-0.6.0-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
+  - `spotify-controller-0.6.0-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
+  - `spotify-controller-0.6.0-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
+  - `spotify-controller-0.6.0-fabric-mc1.21.1.jar` (Fabric Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1`)
 - **NeoForge:**
-  - `spotify-controller-0.5.2-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
-  - `spotify-controller-0.5.2-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
-  - `spotify-controller-0.5.2-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
-- **Java:** `25`
+  - `spotify-controller-0.6.0-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
+  - `spotify-controller-0.6.0-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
+  - `spotify-controller-0.6.0-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
+  - `spotify-controller-0.6.0-neoforge-mc1.21.1.jar` (NeoForge `21.0.x` / `21.1.x`)
+- **Java:** `25` for `26.x`, or `21+` for `1.21` / `1.21.1`
 - **Spotify Account:**
   - Viewing the currently playing track works on Free and Premium accounts.
   - Controlling playback (play/pause, skip, seek, shuffle, repeat, volume) requires **Spotify Premium** (enforced by Spotify's Web API) and an active Spotify playback device.
@@ -94,22 +96,24 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Building from Source
 
-Requires **JDK 25**.
+Requires **JDK 25** (and **JDK 21** toolchain installed for NeoForge `1.21.1`).
 
 ```bash
-# Fabric (Minecraft 26.3 / 26.2 / 26.1.x)
+# Fabric (Minecraft 26.3 / 26.2 / 26.1.x / 1.21.1)
 ./gradlew build
 ./gradlew build -Pmc262
 ./gradlew build -Pmc261
+./gradlew build -Pmc121
 
-# NeoForge (Minecraft 26.3 / 26.2 / 26.1.x)
+# NeoForge (Minecraft 26.3 / 26.2 / 26.1.x / 1.21.1)
 ./gradlew build -Pneoforge
 ./gradlew build -Pneoforge -Pmc262
 ./gradlew build -Pneoforge -Pmc261
+./gradlew build -Pneoforge -Pmc121
 ```
 
 *(On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.)*
 
 The compiled jars are output to `build/libs/`:
-- `spotify-controller-0.5.2-fabric-mc26.3.jar` / `spotify-controller-0.5.2-fabric-mc26.2.jar` / `spotify-controller-0.5.2-fabric-mc26.1.x.jar` (Fabric)
-- `spotify-controller-0.5.2-neoforge-mc26.3.jar` / `spotify-controller-0.5.2-neoforge-mc26.2.jar` / `spotify-controller-0.5.2-neoforge-mc26.1.x.jar` (NeoForge)
+- `spotify-controller-0.6.0-fabric-mc26.3.jar` / `spotify-controller-0.6.0-fabric-mc26.2.jar` / `spotify-controller-0.6.0-fabric-mc26.1.x.jar` / `spotify-controller-0.6.0-fabric-mc1.21.1.jar` (Fabric)
+- `spotify-controller-0.6.0-neoforge-mc26.3.jar` / `spotify-controller-0.6.0-neoforge-mc26.2.jar` / `spotify-controller-0.6.0-neoforge-mc26.1.x.jar` / `spotify-controller-0.6.0-neoforge-mc1.21.1.jar` (NeoForge)

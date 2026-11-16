@@ -38,11 +38,18 @@ public class SpotifySetupGuideScreen extends Screen {
     private final SpotifyPoller poller;
     private final SpotifyHudOverlay hudOverlay;
 
+    private enum StatusKind {
+        NEUTRAL,
+        SUCCESS,
+        ERROR
+    }
+
     private int currentStep = 1;
     private EditBox clientIdBox;
     private Button saveAndConnectButton;
     private String draftClientId;
-    private String statusMessage = "";
+    private Component statusMessage;
+    private StatusKind statusKind = StatusKind.NEUTRAL;
     private boolean authInProgress = false;
     private CompletableFuture<Boolean> currentAuthFuture;
 
@@ -93,12 +100,16 @@ public class SpotifySetupGuideScreen extends Screen {
         int cardBottom = top + 196;
 
         // Top step selector tabs
-        String[] stepLabels = {"1. Create App", "2. Redirect URL", "3. Connect"};
+        String[] stepKeys = {
+                "screen.spotify_controller.setup.tab.step1",
+                "screen.spotify_controller.setup.tab.step2",
+                "screen.spotify_controller.setup.tab.step3"
+        };
         for (int i = 0; i < TOTAL_STEPS; i++) {
             int stepNumber = i + 1;
             int tabX = innerLeft + i * (STEP_BUTTON_WIDTH + STEP_BUTTON_GAP);
             addRenderableWidget(
-                    Button.builder(Component.literal(stepLabels[i]), button -> goToStep(stepNumber))
+                    Button.builder(Component.translatable(stepKeys[i]), button -> goToStep(stepNumber))
                             .bounds(tabX, top + 26, STEP_BUTTON_WIDTH, 18)
                             .build()
             );
@@ -107,18 +118,18 @@ public class SpotifySetupGuideScreen extends Screen {
         // Step-specific action widgets
         if (currentStep == 1) {
             addRenderableWidget(
-                    Button.builder(Component.literal("Open Spotify Dashboard"), button -> openDashboard())
+                    Button.builder(Component.translatable("screen.spotify_controller.setup.open_dashboard"), button -> openDashboard())
                             .bounds(left + (PANEL_WIDTH - 200) / 2, cardBottom - 28, 200, 20)
                             .build()
             );
         } else if (currentStep == 2) {
             addRenderableWidget(
-                    Button.builder(Component.literal("Copy Redirect URL"), button -> copyRedirectUrl())
+                    Button.builder(Component.translatable("screen.spotify_controller.config.copy_redirect"), button -> copyRedirectUrl())
                             .bounds(innerLeft + 10, cardBottom - 28, 153, 20)
                             .build()
             );
             addRenderableWidget(
-                    Button.builder(Component.literal("Open Spotify Dashboard"), button -> openDashboard())
+                    Button.builder(Component.translatable("screen.spotify_controller.setup.open_dashboard"), button -> openDashboard())
                             .bounds(innerLeft + 173, cardBottom - 28, 153, 20)
                             .build()
             );
@@ -133,20 +144,20 @@ public class SpotifySetupGuideScreen extends Screen {
             );
             clientIdBox.setMaxLength(128);
             clientIdBox.setValue(draftClientId != null ? draftClientId : "");
-            clientIdBox.setHint(Component.literal("Paste your Spotify Client ID here..."));
+            clientIdBox.setHint(Component.translatable("screen.spotify_controller.config.client_id_hint"));
             clientIdBox.setResponder(value -> draftClientId = value);
             addRenderableWidget(clientIdBox);
             setInitialFocus(clientIdBox);
 
             saveAndConnectButton = addRenderableWidget(
-                    Button.builder(Component.literal("Save & Connect Spotify"), button -> saveAndConnect())
+                    Button.builder(Component.translatable("screen.spotify_controller.config.connect"), button -> saveAndConnect())
                             .bounds(innerLeft + 10, cardTop + 98, 180, 20)
                             .build()
             );
             saveAndConnectButton.active = !authInProgress;
 
             addRenderableWidget(
-                    Button.builder(Component.literal("Paste Clipboard"), button -> pasteClipboard())
+                    Button.builder(Component.translatable("screen.spotify_controller.setup.paste_clipboard"), button -> pasteClipboard())
                             .bounds(innerLeft + 196, cardTop + 98, 130, 20)
                             .build()
             );
@@ -155,32 +166,32 @@ public class SpotifySetupGuideScreen extends Screen {
         // Bottom wizard navigation bar
         int navY = top + 204;
         Button backButton = addRenderableWidget(
-                Button.builder(Component.literal("< Back"), button -> goToStep(currentStep - 1))
+                Button.builder(Component.translatable("screen.spotify_controller.setup.back"), button -> goToStep(currentStep - 1))
                         .bounds(innerLeft, navY, 80, 20)
                         .build()
         );
         backButton.active = currentStep > 1;
 
         addRenderableWidget(
-                Button.builder(Component.literal("Open Config"), button -> openConfigScreen())
+                Button.builder(Component.translatable("screen.spotify_controller.setup.open_config"), button -> openConfigScreen())
                         .bounds(innerLeft + 86, navY, 105, 20)
                         .build()
         );
 
         if (currentStep < TOTAL_STEPS) {
             addRenderableWidget(
-                    Button.builder(Component.literal("Next Step >"), button -> goToStep(currentStep + 1))
+                    Button.builder(Component.translatable("screen.spotify_controller.setup.next_step"), button -> goToStep(currentStep + 1))
                             .bounds(innerLeft + 197, navY, 85, 20)
                             .build()
             );
             addRenderableWidget(
-                    Button.builder(Component.literal("Close"), button -> onClose())
+                    Button.builder(Component.translatable("screen.spotify_controller.setup.close"), button -> onClose())
                             .bounds(innerLeft + 288, navY, 48, 20)
                             .build()
             );
         } else {
             addRenderableWidget(
-                    Button.builder(Component.literal("Finish"), button -> onClose())
+                    Button.builder(Component.translatable("screen.spotify_controller.setup.finish"), button -> onClose())
                             .bounds(innerLeft + 197, navY, 139, 20)
                             .build()
             );
@@ -223,11 +234,11 @@ public class SpotifySetupGuideScreen extends Screen {
             renderStepThreeText(guiGraphics, textLeft, cardTop, textMaxWidth, accentColor);
         }
 
-        String footerStatus = resolveFooterStatusMessage();
-        if (!footerStatus.isEmpty()) {
+        Component footerStatus = resolveFooterStatusMessage();
+        if (footerStatus != null) {
             int statusY = currentStep == 3 ? cardTop + 124 : cardBottom - 44;
             int statusColor = resolveStatusColor(footerStatus, accentColor);
-            List<FormattedCharSequence> lines = this.font.split(Component.literal(footerStatus), textMaxWidth);
+            List<FormattedCharSequence> lines = this.font.split(footerStatus, textMaxWidth);
             int maxLines = Math.min(2, lines.size());
             for (int i = 0; i < maxLines; i++) {
                 guiGraphics.text(this.font, lines.get(i), textLeft, statusY + i * (this.font.lineHeight + 1), statusColor);
@@ -248,28 +259,14 @@ public class SpotifySetupGuideScreen extends Screen {
             int maxWidth,
             int accentColor
     ) {
-        guiGraphics.text(this.font, "Step 1 of 3: Create a Spotify Developer App", textLeft, cardTop + 10, accentColor);
+        guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.setup.step1.heading"), textLeft, cardTop + 10, accentColor);
 
         int y = cardTop + 26;
-        y = drawWrappedStepLine(guiGraphics, "1. Click \"Open Spotify Dashboard\" below and log in.", textLeft, y, maxWidth, 0xFFE0E0E0);
-        y = drawWrappedStepLine(guiGraphics, "2. Click \"Create app\" in the top-right corner.", textLeft, y, maxWidth, 0xFFE0E0E0);
-        y = drawWrappedStepLine(guiGraphics, "3. Enter any App name & description (e.g. \"MC Spotify\").", textLeft, y, maxWidth, 0xFFE0E0E0);
-        y = drawWrappedStepLine(
-                guiGraphics,
-                "4. Under \"Which API/SDKs are you planning to use?\", check \"Web API\".",
-                textLeft,
-                y,
-                maxWidth,
-                0xFFE0E0E0
-        );
-        drawWrappedStepLine(
-                guiGraphics,
-                "Note: Spotify Premium is required for playback control.",
-                textLeft,
-                y + 2,
-                maxWidth,
-                0xFFFFB74D
-        );
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step1.line1"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step1.line2"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step1.line3"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step1.line4"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step1.note"), textLeft, y + 2, maxWidth, 0xFFFFB74D);
     }
 
     private void renderStepTwoText(
@@ -279,10 +276,10 @@ public class SpotifySetupGuideScreen extends Screen {
             int maxWidth,
             int accentColor
     ) {
-        guiGraphics.text(this.font, "Step 2 of 3: Add the Redirect URL", textLeft, cardTop + 8, accentColor);
+        guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.setup.step2.heading"), textLeft, cardTop + 8, accentColor);
         guiGraphics.text(
                 this.font,
-                "1. Click \"Copy Redirect URL\" below to copy this exact address:",
+                Component.translatable("screen.spotify_controller.setup.step2.line1"),
                 textLeft,
                 cardTop + 22,
                 0xFFE0E0E0
@@ -296,22 +293,8 @@ public class SpotifySetupGuideScreen extends Screen {
         guiGraphics.text(this.font, clippedUri, textLeft + 5, boxY + 4, 0xFF80CBC4);
 
         int y = cardTop + 54;
-        y = drawWrappedStepLine(
-                guiGraphics,
-                "2. Paste it into the \"Redirect URIs\" field in the dashboard and click \"Add\".",
-                textLeft,
-                y,
-                maxWidth,
-                0xFFE0E0E0
-        );
-        drawWrappedStepLine(
-                guiGraphics,
-                "3. Check the Developer Terms of Service and click \"Save\" at the bottom.",
-                textLeft,
-                y,
-                maxWidth,
-                0xFFE0E0E0
-        );
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step2.line2"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step2.line3"), textLeft, y, maxWidth, 0xFFE0E0E0);
     }
 
     private void renderStepThreeText(
@@ -321,43 +304,22 @@ public class SpotifySetupGuideScreen extends Screen {
             int maxWidth,
             int accentColor
     ) {
-        guiGraphics.text(this.font, "Step 3 of 3: Paste Your Client ID & Connect", textLeft, cardTop + 10, accentColor);
+        guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.setup.step3.heading"), textLeft, cardTop + 10, accentColor);
         int y = cardTop + 26;
-        y = drawWrappedStepLine(
-                guiGraphics,
-                "1. In your Spotify app dashboard, click the \"Settings\" button.",
-                textLeft,
-                y,
-                maxWidth,
-                0xFFE0E0E0
-        );
-        y = drawWrappedStepLine(
-                guiGraphics,
-                "2. Copy the \"Client ID\" (you do not need the Client Secret).",
-                textLeft,
-                y,
-                maxWidth,
-                0xFFE0E0E0
-        );
-        drawWrappedStepLine(
-                guiGraphics,
-                "3. Paste it below and click \"Save & Connect Spotify\":",
-                textLeft,
-                y,
-                maxWidth,
-                0xFFE0E0E0
-        );
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step3.line1"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        y = drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step3.line2"), textLeft, y, maxWidth, 0xFFE0E0E0);
+        drawWrappedStepLine(guiGraphics, Component.translatable("screen.spotify_controller.setup.step3.line3"), textLeft, y, maxWidth, 0xFFE0E0E0);
     }
 
     private int drawWrappedStepLine(
             GuiGraphicsExtractor guiGraphics,
-            String text,
+            Component text,
             int x,
             int y,
             int maxWidth,
             int color
     ) {
-        List<FormattedCharSequence> lines = this.font.split(Component.literal(text), maxWidth);
+        List<FormattedCharSequence> lines = this.font.split(text, maxWidth);
         int stepY = this.font.lineHeight + 1;
         for (FormattedCharSequence line : lines) {
             guiGraphics.text(this.font, line, x, y, color);
@@ -373,32 +335,32 @@ public class SpotifySetupGuideScreen extends Screen {
 
     private void openDashboard() {
         SpotifyControllerClient.openBrowserUri(URI.create(DASHBOARD_URL));
-        this.statusMessage = "Opened Spotify Developer Dashboard in your browser.";
+        setStatus("screen.spotify_controller.setup.status.opened_dashboard", StatusKind.SUCCESS);
     }
 
     private void copyRedirectUrl() {
         clientOrDefault().keyboardHandler.setClipboard(config.getRedirectUri());
-        this.statusMessage = "Copied Redirect URL to clipboard!";
+        setStatus("screen.spotify_controller.setup.status.copied_redirect", StatusKind.SUCCESS);
     }
 
     private void pasteClipboard() {
         String clipboard = clientOrDefault().keyboardHandler.getClipboard();
         String trimmed = clipboard != null ? clipboard.trim() : "";
         if (trimmed.isEmpty()) {
-            this.statusMessage = "Clipboard is empty.";
+            setStatus("screen.spotify_controller.setup.status.clipboard_empty", StatusKind.ERROR);
             return;
         }
         this.draftClientId = trimmed;
         if (this.clientIdBox != null) {
             this.clientIdBox.setValue(trimmed);
         }
-        this.statusMessage = "Pasted Client ID from clipboard.";
+        setStatus("screen.spotify_controller.setup.status.pasted_client_id", StatusKind.SUCCESS);
     }
 
     private void saveAndConnect() {
         String enteredId = getCurrentClientIdInput();
         if (enteredId.isEmpty()) {
-            this.statusMessage = "Please paste your Spotify Client ID first.";
+            setStatus("screen.spotify_controller.setup.status.missing_client_id", StatusKind.ERROR);
             return;
         }
 
@@ -407,11 +369,12 @@ public class SpotifySetupGuideScreen extends Screen {
         if (saveAndConnectButton != null) {
             saveAndConnectButton.active = false;
         }
-        this.statusMessage = "Starting Spotify authorization in your browser...";
+        setStatus("screen.spotify_controller.setup.status.starting_auth", StatusKind.NEUTRAL);
 
         Minecraft client = clientOrDefault();
         CompletableFuture<Boolean> authFuture = authService.startAuthFlow(message -> client.execute(() -> {
-            this.statusMessage = message;
+            this.statusMessage = Component.literal(message);
+            this.statusKind = StatusKind.NEUTRAL;
             this.poller.setStatusMessage(message);
         }));
         this.currentAuthFuture = authFuture;
@@ -424,10 +387,10 @@ public class SpotifySetupGuideScreen extends Screen {
                 this.saveAndConnectButton.active = true;
             }
             if (Boolean.TRUE.equals(success)) {
-                this.statusMessage = "Connected to Spotify! Click Finish to start listening.";
+                setStatus("screen.spotify_controller.setup.status.connected_finish", StatusKind.SUCCESS);
                 this.poller.refreshNow();
             } else if (throwable != null) {
-                this.statusMessage = "Spotify connection failed: " + throwable.getMessage();
+                setStatus("screen.spotify_controller.setup.status.connect_failed", StatusKind.ERROR, throwable.getMessage());
             }
         }));
     }
@@ -460,22 +423,36 @@ public class SpotifySetupGuideScreen extends Screen {
         return draftClientId != null ? draftClientId.trim() : "";
     }
 
-    private String resolveFooterStatusMessage() {
-        if (statusMessage != null && !statusMessage.isEmpty()) {
+    private void setStatus(String key, StatusKind kind, Object... args) {
+        this.statusMessage = Component.translatable(key, args);
+        this.statusKind = kind;
+    }
+
+    private Component resolveFooterStatusMessage() {
+        if (statusMessage != null) {
             return statusMessage;
         }
         if (currentStep == 3 && (config.hasValidAccessToken() || config.hasRefreshToken())) {
-            return "Account: Connected! You can click Finish below.";
+            return Component.translatable("screen.spotify_controller.setup.status.account_ready");
         }
-        return "";
+        return null;
     }
 
-    private int resolveStatusColor(String message, int accentColor) {
-        String lower = message.toLowerCase();
-        if (lower.contains("failed") || lower.contains("please paste") || lower.contains("empty")) {
+    private int resolveStatusColor(Component message, int accentColor) {
+        if (statusMessage == null) {
+            return accentColor;
+        }
+        if (statusKind == StatusKind.ERROR) {
             return 0xFFFF8A80;
         }
-        if (lower.contains("connected") || lower.contains("copied") || lower.contains("pasted") || lower.contains("opened")) {
+        if (statusKind == StatusKind.SUCCESS) {
+            return accentColor;
+        }
+        String lower = message.getString().toLowerCase();
+        if (lower.contains("failed") || lower.contains("rejected") || lower.contains("missing") || lower.contains("timed out")) {
+            return 0xFFFF8A80;
+        }
+        if (lower.contains("connected")) {
             return accentColor;
         }
         return 0xFFFFD54F;

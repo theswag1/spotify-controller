@@ -13,6 +13,7 @@ import com.noah.spotifycontroller.gui.SpotifySetupGuideScreen;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import com.noah.spotifycontroller.util.MinecraftGuiCompat;
+import com.noah.spotifycontroller.util.SpotifyI18n;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -198,7 +199,9 @@ public class SpotifyControllerClient {
                 config.save();
                 sendOverlayFeedback(
                         client,
-                        "HUD Widget: " + (config.hudEnabled ? "ON" : "OFF"),
+                        Component.translatable(config.hudEnabled
+                                ? "screen.spotify_controller.config.hud_on"
+                                : "screen.spotify_controller.config.hud_off"),
                         config.hudEnabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW
                 );
             }
@@ -291,6 +294,19 @@ public class SpotifyControllerClient {
         return hudOverlay;
     }
 
+    /**
+     * Returns whether any Spotify Controller screen is currently open on the client.
+     */
+    public static boolean isSpotifyUiOpen(Minecraft client) {
+        if (client == null) {
+            return false;
+        }
+        Screen screen = MinecraftGuiCompat.getScreen(client);
+        return screen instanceof SpotifyControllerScreen
+                || screen instanceof SpotifyConfigScreen
+                || screen instanceof SpotifySetupGuideScreen;
+    }
+
     public static int requestOpenControllerScreen() {
         pendingOpenControllerScreen = true;
         return 1;
@@ -313,12 +329,12 @@ public class SpotifyControllerClient {
     ) {
         String id = rawId == null ? "" : rawId.trim();
         if (id.isEmpty()) {
-            sendError.accept(Component.literal("[Spotify] Client ID cannot be empty."));
+            sendError.accept(Component.translatable("chat.spotify_controller.client_id_empty"));
             return 0;
         }
         config.setClientId(id);
         sendFeedback.accept(
-                Component.literal("[Spotify] Saved Client ID. Run /spotify login to connect.")
+                Component.translatable("chat.spotify_controller.client_id_saved")
                         .withStyle(ChatFormatting.GREEN)
         );
         return 1;
@@ -338,26 +354,26 @@ public class SpotifyControllerClient {
         boolean connected = config.hasValidAccessToken() || config.hasRefreshToken();
         TrackState track = poller.getCurrentTrack();
         StringBuilder summary = new StringBuilder();
-        summary.append(connected ? "Connected" : "Not connected");
+        summary.append(SpotifyI18n.translate(connected
+                ? "chat.spotify_controller.status.connected"
+                : "chat.spotify_controller.status.not_connected"));
         if (!config.hasClientId()) {
-            summary.append(" (Client ID not set)");
+            summary.append(SpotifyI18n.translate("chat.spotify_controller.status.client_id_unset"));
         }
         if (track != null) {
             summary.append(" | ")
-                    .append(track.isPlaying() ? "Playing: " : "Paused: ")
-                    .append(track.trackName())
-                    .append(" - ")
-                    .append(track.artistName())
-                    .append(" [")
-                    .append(TrackState.formatDuration(track.getInterpolatedProgressMs()))
-                    .append(" / ")
-                    .append(TrackState.formatDuration(track.durationMs()))
-                    .append("]");
+                    .append(SpotifyI18n.translate(
+                            track.isPlaying() ? "chat.spotify_controller.status.playing" : "chat.spotify_controller.status.paused",
+                            track.trackName(),
+                            track.artistName(),
+                            TrackState.formatDuration(track.getInterpolatedProgressMs()),
+                            TrackState.formatDuration(track.durationMs())
+                    ));
         } else {
             summary.append(" | ").append(poller.getLastStatusMessage());
         }
         sendFeedback.accept(
-                Component.literal("[Spotify] " + summary)
+                Component.translatable("chat.spotify_controller.prefix", summary.toString())
                         .withStyle(connected ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
         );
         return 1;
@@ -399,7 +415,9 @@ public class SpotifyControllerClient {
         config.hudEnabled = !config.hudEnabled;
         config.save();
         sendFeedback.accept(
-                Component.literal("[Spotify] In-game HUD widget " + (config.hudEnabled ? "enabled." : "disabled."))
+                Component.translatable(config.hudEnabled
+                                ? "chat.spotify_controller.hud_enabled"
+                                : "chat.spotify_controller.hud_disabled")
                         .withStyle(config.hudEnabled ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
         );
         return 1;
@@ -410,7 +428,7 @@ public class SpotifyControllerClient {
         if (inWorld && !wasInWorld && !config.hasClientId()) {
             String keyName = openConfigKey != null ? openConfigKey.getTranslatedKeyMessage().getString() : "O";
             client.player.sendSystemMessage(
-                    Component.literal("[Spotify] Not set up yet! Press [" + keyName + "] or run /spotify setup for the first-time setup guide.")
+                    Component.translatable("chat.spotify_controller.setup_prompt", keyName)
                             .withStyle(ChatFormatting.YELLOW)
             );
         }
@@ -450,7 +468,7 @@ public class SpotifyControllerClient {
     private static int runPlaybackCommand(Minecraft client, CompletableFuture<SpotifyApiClient.ApiResult> action) {
         action.whenComplete((result, throwable) -> {
             if (throwable != null) {
-                sendClientMessage(client, "Error: " + throwable.getMessage(), true);
+                sendClientMessage(client, SpotifyI18n.translate("chat.spotify_controller.error", throwable.getMessage()), true);
                 return;
             }
             if (result.success()) {
@@ -464,7 +482,7 @@ public class SpotifyControllerClient {
     private static void runKeybindPlaybackAction(Minecraft client, CompletableFuture<SpotifyApiClient.ApiResult> action) {
         action.whenComplete((result, throwable) -> {
             if (throwable != null) {
-                sendOverlayFeedback(client, "Error: " + throwable.getMessage(), ChatFormatting.RED);
+                sendOverlayFeedback(client, SpotifyI18n.translate("chat.spotify_controller.error", throwable.getMessage()), ChatFormatting.RED);
                 return;
             }
             if (result.success()) {
@@ -482,7 +500,7 @@ public class SpotifyControllerClient {
         client.execute(() -> {
             if (client.player != null) {
                 client.player.sendSystemMessage(
-                        Component.literal("[Spotify] " + message)
+                        Component.translatable("chat.spotify_controller.prefix", message)
                                 .withStyle(isError ? ChatFormatting.RED : ChatFormatting.GREEN)
                 );
             }
@@ -490,10 +508,14 @@ public class SpotifyControllerClient {
     }
 
     private static void sendOverlayFeedback(Minecraft client, String message, ChatFormatting color) {
+        sendOverlayFeedback(client, Component.literal(message), color);
+    }
+
+    private static void sendOverlayFeedback(Minecraft client, Component message, ChatFormatting color) {
         client.execute(() -> {
             if (client.player != null) {
                 client.player.sendOverlayMessage(
-                        Component.literal("[Spotify] " + message).withStyle(color)
+                        Component.translatable("chat.spotify_controller.prefix", message).withStyle(color)
                 );
             }
         });

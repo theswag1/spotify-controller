@@ -284,6 +284,11 @@ public class SpotifyConfig {
         save();
     }
 
+    public synchronized void setPollIntervalSeconds(int seconds) {
+        this.pollIntervalSeconds = Math.max(1, seconds);
+        save();
+    }
+
     public int getAccentColorArgb() {
         return parseHexColor(this.accentColorHex, DEFAULT_ACCENT_COLOR_ARGB);
     }

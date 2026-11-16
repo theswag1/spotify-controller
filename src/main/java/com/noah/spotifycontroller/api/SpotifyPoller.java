@@ -1,6 +1,9 @@
 package com.noah.spotifycontroller.api;
 
+import com.noah.spotifycontroller.SpotifyControllerClient;
 import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.noah.spotifycontroller.util.SpotifyI18n;
+import net.minecraft.client.Minecraft;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Periodically polls the Spotify Web API in the background to keep the current
@@ -15,15 +19,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class SpotifyPoller {
     private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
+    public static final int IDLE_PAUSED_POLL_SECONDS = 6;
+    public static final int IDLE_NO_PLAYBACK_POLL_SECONDS = 8;
+    public static final int IDLE_MENU_POLL_SECONDS = 10;
+    public static final int IDLE_UNFOCUSED_POLL_SECONDS = 10;
 
     private final SpotifyConfig config;
     private final SpotifyApiClient apiClient;
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean pollInFlight = new AtomicBoolean(false);
+    private final AtomicInteger secondsSinceLastPoll = new AtomicInteger(Integer.MAX_VALUE / 2);
     private volatile boolean started = false;
 
     private volatile TrackState currentTrack;
-    private volatile String lastStatusMessage = "Not connected";
+    private volatile String lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.not_connected");
 
     public SpotifyPoller(SpotifyConfig config, SpotifyApiClient apiClient) {
         this.config = config;
@@ -40,8 +49,62 @@ public class SpotifyPoller {
             return;
         }
         started = true;
-        int interval = Math.max(1, config.pollIntervalSeconds);
-        scheduler.scheduleAtFixedRate(this::pollOnce, 1, interval, TimeUnit.SECONDS);
+        secondsSinceLastPoll.set(Integer.MAX_VALUE / 2);
+        scheduler.scheduleAtFixedRate(this::tickPoller, 1, 1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Computes the effective poll interval in seconds, slowing down when paused, idle, on menus, or unfocused.
+     */
+    public static int computeEffectivePollIntervalSeconds(
+            int configuredPollSeconds,
+            TrackState currentTrack,
+            boolean inWorld,
+            boolean windowFocused,
+            boolean spotifyUiOpen
+    ) {
+        int base = Math.max(1, configuredPollSeconds);
+        if (!windowFocused) {
+            return Math.max(base, IDLE_UNFOCUSED_POLL_SECONDS);
+        }
+        if (!inWorld && !spotifyUiOpen) {
+            return Math.max(base, IDLE_MENU_POLL_SECONDS);
+        }
+        if (currentTrack == null) {
+            return Math.max(base, IDLE_NO_PLAYBACK_POLL_SECONDS);
+        }
+        if (!currentTrack.isPlaying()) {
+            return Math.max(base, IDLE_PAUSED_POLL_SECONDS);
+        }
+        return base;
+    }
+
+    /**
+     * Returns the current effective poll interval using live {@link SpotifyConfig} and client state.
+     */
+    public int getEffectivePollIntervalSeconds() {
+        int configured = Math.max(1, config.pollIntervalSeconds);
+        boolean inWorld = true;
+        boolean windowFocused = true;
+        boolean spotifyUiOpen = false;
+        try {
+            Minecraft client = Minecraft.getInstance();
+            if (client != null) {
+                inWorld = client.player != null && client.level != null;
+                windowFocused = client.isWindowActive();
+                spotifyUiOpen = SpotifyControllerClient.isSpotifyUiOpen(client);
+            }
+        } catch (LinkageError | RuntimeException ignored) {
+            // Headless unit test environments may not initialize Minecraft client state
+        }
+        return computeEffectivePollIntervalSeconds(configured, currentTrack, inWorld, windowFocused, spotifyUiOpen);
+    }
+
+    private void tickPoller() {
+        int elapsed = secondsSinceLastPoll.incrementAndGet();
+        if (elapsed >= getEffectivePollIntervalSeconds()) {
+            pollOnce();
+        }
     }
 
     public synchronized void stop() {
@@ -75,18 +138,19 @@ public class SpotifyPoller {
     }
 
     private void pollOnce() {
+        secondsSinceLastPoll.set(0);
         if (!config.hasClientId()) {
             currentTrack = null;
-            lastStatusMessage = "Client ID not set";
+            lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.client_id_not_set");
             return;
         }
         if (!config.hasValidAccessToken() && !config.hasRefreshToken()) {
             currentTrack = null;
-            lastStatusMessage = "Not connected — click Connect Spotify or run /spotify login";
+            lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.not_connected_hint");
             return;
         }
         if (apiClient.isRateLimited()) {
-            lastStatusMessage = "Rate limited by Spotify; pausing polls briefly";
+            lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.rate_limited");
             return;
         }
         if (!pollInFlight.compareAndSet(false, true)) {
@@ -97,7 +161,7 @@ public class SpotifyPoller {
             try {
                 if (throwable != null) {
                     LOGGER.debug("Spotify background poll error", throwable);
-                    lastStatusMessage = "Error polling Spotify: " + throwable.getMessage();
+                    lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.poll_error", throwable.getMessage());
                     return;
                 }
                 if (result == null) {

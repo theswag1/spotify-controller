@@ -1,35 +1,54 @@
 plugins {
     id 'java'
-    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
+    id 'net.neoforged.moddev' version '2.0.148' apply false
     id 'maven-publish'
 }
 
 def isNeoForge = project.hasProperty('neoforge')
+def isMc121 = project.hasProperty('mc121')
 def targetMcVersion = project.hasProperty('target_mc_version')
         ? project.property('target_mc_version').toString()
+        : (isMc121 ? '1.21.1'
         : (project.hasProperty('mc261') ? '26.1.2'
-        : (project.hasProperty('mc262') ? '26.2' : project.minecraft_version.toString()))
+        : (project.hasProperty('mc262') ? '26.2' : project.minecraft_version.toString())))
+def isMc121Family = targetMcVersion.startsWith('1.21')
 def isMc261Family = targetMcVersion.startsWith('26.1')
-def targetArchiveMcLabel = isMc261Family ? '26.1.x' : targetMcVersion
-def targetFabricRange = isMc261Family ? '~26.1' : "~${targetMcVersion}"
-def targetNeoForgeRange = isMc261Family ? '[26.1,)' : "[${targetMcVersion},)"
-def targetNeoForgeMcRange = isMc261Family ? '[26.1,26.2)' : "[${targetMcVersion},)"
+def targetArchiveMcLabel = isMc121Family ? '1.21.1' : (isMc261Family ? '26.1.x' : targetMcVersion)
+def targetFabricLoaderRange = isMc121Family ? '>=0.16.0' : '>=0.19.0'
+def targetFabricRange = isMc121Family ? '>=1.21 <1.21.2' : (isMc261Family ? '~26.1' : "~${targetMcVersion}")
+def targetNeoForgeRange = isMc121Family ? '[21.0,21.2)' : (isMc261Family ? '[26.1,)' : "[${targetMcVersion},)")
+def targetNeoForgeMcRange = isMc121Family ? '[1.21,1.21.2)' : (isMc261Family ? '[26.1,26.2)' : "[${targetMcVersion},)")
+def targetJavaRelease = isMc121Family ? 21 : 25
 
 def targetFabricApiVersion = project.hasProperty('target_fabric_api_version')
         ? project.property('target_fabric_api_version').toString()
+        : (isMc121Family ? project.fabric_api_version_1_21.toString()
         : (isMc261Family ? project.fabric_api_version_26_1.toString()
         : (targetMcVersion == '26.2' ? project.fabric_api_version_26_2.toString()
-        : project.fabric_api_version.toString()))
+        : project.fabric_api_version.toString())))
 def targetNeoForgeVersion = project.hasProperty('target_neoforge_version')
         ? project.property('target_neoforge_version').toString()
+        : (isMc121Family ? project.neoforge_version_1_21.toString()
         : (isMc261Family ? project.neoforge_version_26_1.toString()
         : (targetMcVersion == '26.2' ? project.neoforge_version_26_2.toString()
-        : project.neoforge_version.toString()))
+        : project.neoforge_version.toString())))
 def targetNeoForgeFmlVersion = project.hasProperty('target_neoforge_fml_version')
         ? project.property('target_neoforge_fml_version').toString()
         : (isMc261Family ? project.neoforge_fml_version_26_1.toString()
         : (targetMcVersion == '26.2' ? project.neoforge_fml_version_26_2.toString()
         : project.neoforge_fml_version.toString()))
+
+if (isMc121Family) {
+    if (isNeoForge) {
+        apply plugin: 'net.neoforged.moddev'
+    } else {
+        apply plugin: 'net.fabricmc.fabric-loom-remap'
+    }
+} else {
+    apply plugin: 'net.fabricmc.fabric-loom'
+}
 
 version = isNeoForge
         ? "${project.mod_version}-neoforge-mc${targetArchiveMcLabel}"
@@ -49,16 +68,24 @@ repositories {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${targetMcVersion}"
-
-    if (isNeoForge) {
-        compileOnly "net.neoforged:neoforge:${targetNeoForgeVersion}:universal"
-        compileOnly "net.neoforged.fancymodloader:loader:${targetNeoForgeFmlVersion}"
-        compileOnly "net.neoforged:bus:${project.neoforge_bus_version}"
-        compileOnly "net.neoforged:mergetool:2.0.7:api"
+    if (isMc121Family && isNeoForge) {
+        // NeoForge 1.21.1 dependencies and official Mojang mappings are provisioned by ModDevGradle.
+    } else if (isMc121Family) {
+        minecraft "com.mojang:minecraft:${targetMcVersion}"
+        mappings loom.officialMojangMappings()
+        modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+        modImplementation "net.fabricmc.fabric-api:fabric-api:${targetFabricApiVersion}"
     } else {
-        implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-        implementation "net.fabricmc.fabric-api:fabric-api:${targetFabricApiVersion}"
+        minecraft "com.mojang:minecraft:${targetMcVersion}"
+        if (isNeoForge) {
+            compileOnly "net.neoforged:neoforge:${targetNeoForgeVersion}:universal"
+            compileOnly "net.neoforged.fancymodloader:loader:${targetNeoForgeFmlVersion}"
+            compileOnly "net.neoforged:bus:${project.neoforge_bus_version}"
+            compileOnly "net.neoforged:mergetool:2.0.7:api"
+        } else {
+            implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+            implementation "net.fabricmc.fabric-api:fabric-api:${targetFabricApiVersion}"
+        }
     }
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
@@ -66,13 +93,47 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+if (isMc121Family && isNeoForge) {
+    neoForge {
+        version = targetNeoForgeVersion
+        mods {
+            spotify_controller {
+                sourceSet(sourceSets.main)
+            }
+        }
+        unitTest {
+            enable()
+            testedMod = mods.spotify_controller
+        }
+    }
+}
+
 sourceSets {
     main {
         java {
-            if (isNeoForge) {
-                exclude 'com/noah/spotifycontroller/fabric/**'
+            if (isMc121Family) {
+                srcDir 'src/mc121/java'
+                exclude { FileTreeElement el ->
+                    def p = el.file.path.replace('\\', '/')
+                    if (p.contains('/src/main/java/') && (
+                            p.endsWith('/SpotifyControllerClient.java') ||
+                            p.endsWith('/util/MinecraftGuiCompat.java') ||
+                            p.contains('/com/noah/spotifycontroller/fabric/') ||
+                            p.contains('/com/noah/spotifycontroller/neoforge/') ||
+                            p.contains('/com/noah/spotifycontroller/gui/') ||
+                            p.contains('/com/noah/spotifycontroller/hud/'))) {
+                        return true
+                    }
+                    return isNeoForge
+                            ? p.contains('/com/noah/spotifycontroller/fabric/')
+                            : p.contains('/com/noah/spotifycontroller/neoforge/')
+                }
             } else {
-                exclude 'com/noah/spotifycontroller/neoforge/**'
+                if (isNeoForge) {
+                    exclude 'com/noah/spotifycontroller/fabric/**'
+                } else {
+                    exclude 'com/noah/spotifycontroller/neoforge/**'
+                }
             }
         }
     }
@@ -80,9 +141,11 @@ sourceSets {
 
 processResources {
     inputs.property "version", project.version
+    inputs.property "fabric_loader_range", targetFabricLoaderRange
     inputs.property "minecraft_range", targetFabricRange
     inputs.property "neoforge_range", targetNeoForgeRange
     inputs.property "neoforge_mc_range", targetNeoForgeMcRange
+    inputs.property "java_version", targetJavaRelease
     inputs.property "is_neoforge", isNeoForge
 
     if (isNeoForge) {
@@ -94,23 +157,25 @@ processResources {
     filesMatching(["fabric.mod.json", "META-INF/neoforge.mods.toml"]) {
         expand(
                 "version": inputs.properties.version,
+                "fabric_loader_range": inputs.properties.fabric_loader_range,
                 "minecraft_range": inputs.properties.minecraft_range,
                 "neoforge_range": inputs.properties.neoforge_range,
-                "neoforge_mc_range": inputs.properties.neoforge_mc_range
+                "neoforge_mc_range": inputs.properties.neoforge_mc_range,
+                "java_version": inputs.properties.java_version
         )
     }
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    it.options.release = targetJavaRelease
     it.options.encoding = "UTF-8"
 }
 
 java {
     withSourcesJar()
 
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    sourceCompatibility = JavaVersion.toVersion(targetJavaRelease)
+    targetCompatibility = JavaVersion.toVersion(targetJavaRelease)
 }
 
 test {

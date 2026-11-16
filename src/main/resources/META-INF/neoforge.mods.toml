@@ -7,6 +7,11 @@ modId="spotify_controller"
 version="${version}"
 displayName="Spotify Controller"
 authors="Noah"
+iconFile="assets/spotify_controller/icon.png"
+iconBlur=false
+bannerFile="assets/spotify_controller/icon.png"
+logoFile="assets/spotify_controller/icon.png"
+logoBlur=false
 description='''Control Spotify playback and view the currently playing track inside Minecraft using the Spotify Developer API.'''
 
 [[dependencies.spotify_controller]]

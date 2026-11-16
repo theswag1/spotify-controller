@@ -88,7 +88,7 @@ public class SpotifyHudOverlay {
             guiGraphics.blit(artTexture, artX, artY, artX + ART_SIZE, artY + ART_SIZE, 0.0f, 1.0f, 0.0f, 1.0f);
         } else {
             guiGraphics.fill(artX, artY, artX + ART_SIZE, artY + ART_SIZE, 0xFF222222);
-            guiGraphics.centeredText(font, Component.literal("♪"), artX + ART_SIZE / 2, 19, accentColor);
+            guiGraphics.centeredText(font, Component.translatable("hud.spotify_controller.music_note"), artX + ART_SIZE / 2, 19, accentColor);
         }
         guiGraphics.outline(artX - 1, artY - 1, ART_SIZE + 2, ART_SIZE + 2, 0xFF333333);
 

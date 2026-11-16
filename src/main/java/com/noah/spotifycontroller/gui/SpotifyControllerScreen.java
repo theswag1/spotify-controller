@@ -10,6 +10,7 @@ import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import com.noah.spotifycontroller.util.MinecraftGuiCompat;
+import com.noah.spotifycontroller.util.SpotifyI18n;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -46,7 +47,7 @@ public class SpotifyControllerScreen extends Screen {
     private Button repeatButton;
     private Button hudToggleButton;
 
-    private String statusOverride;
+    private Component statusOverride;
     private boolean draggingVolume = false;
     private int pendingVolume = -1;
 
@@ -84,43 +85,47 @@ public class SpotifyControllerScreen extends Screen {
         int top = panelTop();
 
         shuffleButton = addRenderableWidget(
-                Button.builder(Component.literal("Shuffle: OFF"), button -> toggleShuffle())
+                Button.builder(Component.translatable("screen.spotify_controller.controller.shuffle_off"), button -> toggleShuffle())
                         .bounds(left + 12, top + 122, 76, 20)
                         .build()
         );
 
         addRenderableWidget(
-                Button.builder(Component.literal("<< Prev"), button -> executePlaybackAction(apiClient.previousTrack()))
+                Button.builder(Component.translatable("screen.spotify_controller.controller.prev"), button -> executePlaybackAction(apiClient.previousTrack()))
                         .bounds(left + 93, top + 122, 56, 20)
                         .build()
         );
 
         playPauseButton = addRenderableWidget(
-                Button.builder(Component.literal("Play"), button -> togglePlayPause())
+                Button.builder(Component.translatable("screen.spotify_controller.controller.play"), button -> togglePlayPause())
                         .bounds(left + 154, top + 122, 56, 20)
                         .build()
         );
 
         addRenderableWidget(
-                Button.builder(Component.literal("Next >>"), button -> executePlaybackAction(apiClient.nextTrack()))
+                Button.builder(Component.translatable("screen.spotify_controller.controller.next"), button -> executePlaybackAction(apiClient.nextTrack()))
                         .bounds(left + 215, top + 122, 56, 20)
                         .build()
         );
 
         repeatButton = addRenderableWidget(
-                Button.builder(Component.literal("Repeat: OFF"), button -> cycleRepeatMode())
-                        .bounds(left + 276, top + 122, 76, 20)
-                        .build()
+                Button.builder(
+                        Component.translatable(
+                                "screen.spotify_controller.controller.repeat",
+                                Component.translatable("screen.spotify_controller.controller.repeat.off")
+                        ),
+                        button -> cycleRepeatMode()
+                ).bounds(left + 276, top + 122, 76, 20).build()
         );
 
         addRenderableWidget(
-                Button.builder(Component.literal("Vol -10%"), button -> adjustVolume(-10))
+                Button.builder(Component.translatable("screen.spotify_controller.controller.vol_down"), button -> adjustVolume(-10))
                         .bounds(left + 12, top + 148, 76, 20)
                         .build()
         );
 
         addRenderableWidget(
-                Button.builder(Component.literal("Vol +10%"), button -> adjustVolume(10))
+                Button.builder(Component.translatable("screen.spotify_controller.controller.vol_up"), button -> adjustVolume(10))
                         .bounds(left + 276, top + 148, 76, 20)
                         .build()
         );
@@ -130,7 +135,9 @@ public class SpotifyControllerScreen extends Screen {
                     config.hudEnabled = !config.hudEnabled;
                     config.save();
                     button.setMessage(getHudToggleLabel());
-                    this.statusOverride = "In-game HUD widget " + (config.hudEnabled ? "enabled." : "disabled.");
+                    this.statusOverride = Component.translatable(config.hudEnabled
+                            ? "screen.spotify_controller.controller.status.hud_enabled"
+                            : "screen.spotify_controller.controller.status.hud_disabled");
                 }).bounds(left + 12, top + 174, 110, 20).build()
         );
 
@@ -258,7 +265,7 @@ public class SpotifyControllerScreen extends Screen {
             guiGraphics.blit(artTexture, artX, artY, artX + ALBUM_ART_SIZE, artY + ALBUM_ART_SIZE, 0.0f, 1.0f, 0.0f, 1.0f);
         } else {
             guiGraphics.fill(artX, artY, artX + ALBUM_ART_SIZE, artY + ALBUM_ART_SIZE, 0xFF222222);
-            guiGraphics.centeredText(this.font, Component.literal("♪"), artX + ALBUM_ART_SIZE / 2, artY + 28, accentColor);
+            guiGraphics.centeredText(this.font, Component.translatable("hud.spotify_controller.music_note"), artX + ALBUM_ART_SIZE / 2, artY + 28, accentColor);
         }
         guiGraphics.outline(artX - 1, artY - 1, ALBUM_ART_SIZE + 2, ALBUM_ART_SIZE + 2, 0xFF3A3A3A);
 
@@ -269,7 +276,9 @@ public class SpotifyControllerScreen extends Screen {
         if (track != null) {
             drawScrollingText(guiGraphics, track.trackName(), textX, top + 36, maxTextWidth, 0xFFFFFFFF, nowMillis);
             drawScrollingText(guiGraphics, track.artistName(), textX, top + 50, maxTextWidth, 0xFFB3B3B3, nowMillis);
-            String albumLabel = track.albumName().isBlank() ? "Spotify Playback" : track.albumName();
+            String albumLabel = track.albumName().isBlank()
+                    ? SpotifyI18n.translate("screen.spotify_controller.controller.default_album")
+                    : track.albumName();
             drawScrollingText(guiGraphics, albumLabel, textX, top + 64, maxTextWidth, 0xFF8E8E8E, nowMillis);
 
             long progressMs = track.getInterpolatedProgressMs();
@@ -300,10 +309,11 @@ public class SpotifyControllerScreen extends Screen {
                 guiGraphics.outline(seekX - 1, seekY - 1, maxTextWidth + 2, seekHeight + 2, 0xFFFFFFFF);
             }
         } else {
-            guiGraphics.text(this.font, Component.literal("No active Spotify track"), textX, top + 38, 0xFFFFFFFF);
-            guiGraphics.text(this.font, Component.literal("Start playback in Spotify or log in"), textX, top + 52, 0xFFA0A0A0);
-            guiGraphics.text(this.font, Component.literal("0:00"), textX, top + 80, 0xFF777777);
-            guiGraphics.text(this.font, Component.literal("0:00"), textX + maxTextWidth - this.font.width("0:00"), top + 80, 0xFF777777);
+            Component zeroTime = Component.translatable("screen.spotify_controller.controller.zero_time");
+            guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.controller.no_track_title"), textX, top + 38, 0xFFFFFFFF);
+            guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.controller.no_track_subtitle"), textX, top + 52, 0xFFA0A0A0);
+            guiGraphics.text(this.font, zeroTime, textX, top + 80, 0xFF777777);
+            guiGraphics.text(this.font, zeroTime, textX + maxTextWidth - this.font.width(zeroTime), top + 80, 0xFF777777);
             guiGraphics.fill(textX, top + 92, textX + maxTextWidth, top + 98, 0xFF2B2B2B);
         }
     }
@@ -340,16 +350,20 @@ public class SpotifyControllerScreen extends Screen {
         int borderColor = (hovered || draggingVolume) ? 0xFFFFFFFF : 0xFF3E3E3E;
         guiGraphics.outline(barX, barY, barWidth, barHeight, borderColor);
 
-        String label = volume >= 0 ? "Volume: " + volume + "%" : "Volume: --%";
+        Component label = volume >= 0
+                ? Component.translatable("screen.spotify_controller.controller.volume_value", volume)
+                : Component.translatable("screen.spotify_controller.controller.volume_unknown");
         guiGraphics.centeredText(this.font, label, barX + barWidth / 2, barY + 6, 0xFFFFFFFF);
     }
 
     private void renderStatusFooter(GuiGraphicsExtractor guiGraphics, int left, int top) {
         boolean connected = config.hasValidAccessToken() || config.hasRefreshToken();
-        String prefix = connected ? "Spotify: " : "Not connected: ";
+        String prefix = SpotifyI18n.translate(connected
+                ? "screen.spotify_controller.controller.footer_connected_prefix"
+                : "screen.spotify_controller.controller.footer_disconnected_prefix");
         int prefixColor = connected ? 0xFF1DB954 : 0xFFFFB74D;
 
-        String detail = statusOverride != null ? statusOverride : poller.getLastStatusMessage();
+        String detail = statusOverride != null ? statusOverride.getString() : poller.getLastStatusMessage();
         String fullText = this.font.plainSubstrByWidth(prefix + detail, CONTENT_WIDTH);
 
         int footerY = top + 204;
@@ -388,13 +402,20 @@ public class SpotifyControllerScreen extends Screen {
         String repeat = getEffectiveRepeat(track);
 
         if (playPauseButton != null) {
-            playPauseButton.setMessage(Component.literal(playing ? "Pause" : "Play"));
+            playPauseButton.setMessage(Component.translatable(playing
+                    ? "screen.spotify_controller.controller.pause"
+                    : "screen.spotify_controller.controller.play"));
         }
         if (shuffleButton != null) {
-            shuffleButton.setMessage(Component.literal(shuffle ? "Shuffle: ON" : "Shuffle: OFF"));
+            shuffleButton.setMessage(Component.translatable(shuffle
+                    ? "screen.spotify_controller.controller.shuffle_on"
+                    : "screen.spotify_controller.controller.shuffle_off"));
         }
         if (repeatButton != null) {
-            repeatButton.setMessage(Component.literal("Repeat: " + SpotifyApiClient.formatRepeatLabel(repeat)));
+            repeatButton.setMessage(Component.translatable(
+                    "screen.spotify_controller.controller.repeat",
+                    Component.translatable(SpotifyApiClient.getRepeatTranslationKey(repeat))
+            ));
         }
         if (hudToggleButton != null) {
             hudToggleButton.setMessage(getHudToggleLabel());
@@ -438,11 +459,14 @@ public class SpotifyControllerScreen extends Screen {
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         action.whenComplete((result, throwable) -> client.execute(() -> {
             if (throwable != null) {
-                this.statusOverride = "Error: " + throwable.getMessage();
+                this.statusOverride = Component.translatable(
+                        "screen.spotify_controller.controller.status.error",
+                        throwable.getMessage()
+                );
                 return;
             }
             if (result != null) {
-                this.statusOverride = result.message();
+                this.statusOverride = Component.literal(result.message());
                 if (result.success()) {
                     poller.triggerImmediateRefresh(350L);
                 }

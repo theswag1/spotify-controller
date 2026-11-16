@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.noah.spotifycontroller.config.SpotifyConfig;
+import com.noah.spotifycontroller.util.SpotifyI18n;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -109,7 +110,7 @@ public class SpotifyAuthService {
     public CompletableFuture<Boolean> startAuthFlow(Consumer<String> statusCallback) {
         Consumer<String> notify = statusCallback != null ? statusCallback : msg -> {};
         if (!config.hasClientId()) {
-            notify.accept("Missing Spotify Client ID! Set it in the Spotify Config screen first.");
+            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.missing_client_id"));
             return CompletableFuture.completedFuture(false);
         }
 
@@ -139,8 +140,8 @@ public class SpotifyAuthService {
             // leaving http://127.0.0.1:<port>/callback unreachable from the browser.
             ipv4Server = HttpServer.create(new InetSocketAddress(loopbackIpv4Address(), port), 0);
         } catch (IOException e) {
-            String message = "Failed to start local callback server on port " + port + ": " + e.getMessage();
-            LOGGER.error(message, e);
+            String message = SpotifyI18n.translate("status.spotify_controller.auth.server_start_failed", port, e.getMessage());
+            LOGGER.error("Failed to start local callback server on port {}: {}", port, e.getMessage(), e);
             notify.accept(message);
             return CompletableFuture.completedFuture(false);
         }
@@ -158,7 +159,7 @@ public class SpotifyAuthService {
             Map<String, String> params = parseQueryParams(exchange.getRequestURI().getRawQuery());
             String error = params.get("error");
             if (error != null && !error.isBlank()) {
-                String msg = "Spotify authorization failed: " + error;
+                String msg = SpotifyI18n.translate("status.spotify_controller.auth.failed", error);
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
                         "Authorization was cancelled or denied (" + escapeHtml(error) + "). You can close this tab.");
                 scheduleServerStop(ipv4Server);
@@ -170,7 +171,7 @@ public class SpotifyAuthService {
             String returnedState = params.get("state");
             String code = params.get("code");
             if (returnedState == null || !returnedState.equals(state)) {
-                String msg = "Spotify callback rejected due to mismatched OAuth state.";
+                String msg = SpotifyI18n.translate("status.spotify_controller.auth.state_mismatch");
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
                         "Invalid OAuth state parameter. Please try connecting again from Minecraft.");
                 scheduleServerStop(ipv4Server);
@@ -180,7 +181,7 @@ public class SpotifyAuthService {
             }
 
             if (code == null || code.isBlank()) {
-                String msg = "Spotify callback did not include an authorization code.";
+                String msg = SpotifyI18n.translate("status.spotify_controller.auth.missing_code");
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
                         "Missing authorization code in callback. Please try again.");
                 scheduleServerStop(ipv4Server);
@@ -192,19 +193,19 @@ public class SpotifyAuthService {
             sendHtmlResponse(exchange, 200, "Spotify Connected",
                     "Authorization received! Exchanging token... You can return to Minecraft now.");
             scheduleServerStop(ipv4Server);
-            notify.accept("Exchanging authorization code for Spotify tokens...");
+            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchanging_code"));
 
             exchangeCodeForTokens(clientId, code, redirectUri, codeVerifier)
                     .whenComplete((ok, throwable) -> {
                         if (throwable != null) {
                             LOGGER.error("Token exchange failed", throwable);
-                            notify.accept("Token exchange failed: " + throwable.getMessage());
+                            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_error", throwable.getMessage()));
                             resultFuture.complete(false);
                         } else if (Boolean.TRUE.equals(ok)) {
-                            notify.accept("Connected to Spotify!");
+                            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.connected"));
                             resultFuture.complete(true);
                         } else {
-                            notify.accept("Failed to exchange Spotify authorization code for tokens.");
+                            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_failed"));
                             resultFuture.complete(false);
                         }
                     });
@@ -249,19 +250,19 @@ public class SpotifyAuthService {
         cleanupExecutor.schedule(() -> {
             if (handled.compareAndSet(false, true) && !resultFuture.isDone()) {
                 stopCallbackServerIfMatches(ipv4Server);
-                notify.accept("Spotify login timed out after 3 minutes.");
+                notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.timeout"));
                 resultFuture.complete(false);
             }
         }, 3, TimeUnit.MINUTES);
 
         String authUrl = buildAuthorizeUrl(clientId, redirectUri, codeChallenge, state);
-        notify.accept("Opened Spotify login in browser. Waiting for callback on " + redirectUri + "...");
+        notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.waiting_browser", redirectUri));
         try {
             browserOpener.accept(URI.create(authUrl));
         } catch (Exception e) {
             LOGGER.error("Could not open browser for Spotify login", e);
             stopCallbackServerIfMatches(ipv4Server);
-            notify.accept("Could not open browser automatically: " + e.getMessage());
+            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.browser_error", e.getMessage()));
             resultFuture.complete(false);
         }
 
