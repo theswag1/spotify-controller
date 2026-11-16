@@ -31,10 +31,12 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -44,15 +46,21 @@ import java.util.function.Consumer;
  */
 public class SpotifyAuthService {
     private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
-    private static final String AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize";
-    private static final String TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
+    private static final String DEFAULT_AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize";
+    private static final String DEFAULT_TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
     private static final String SCOPES = "user-read-playback-state user-read-currently-playing user-modify-playback-state";
     private static final String CODE_VERIFIER_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int CONNECTED_AUTO_CLOSE_SECONDS = 5;
+
+    private record TokenError(String code, String description) {
+    }
 
     private final SpotifyConfig config;
     private final HttpClient httpClient;
     private final Consumer<URI> browserOpener;
+    private final String authorizeEndpoint;
+    private final String tokenEndpoint;
     private final ScheduledExecutorService cleanupExecutor;
 
     private final Object serverLock = new Object();
@@ -69,9 +77,25 @@ public class SpotifyAuthService {
     }
 
     public SpotifyAuthService(SpotifyConfig config, HttpClient httpClient, Consumer<URI> browserOpener) {
+        this(config, httpClient, browserOpener, DEFAULT_AUTHORIZE_ENDPOINT, DEFAULT_TOKEN_ENDPOINT);
+    }
+
+    public SpotifyAuthService(
+            SpotifyConfig config,
+            HttpClient httpClient,
+            Consumer<URI> browserOpener,
+            String authorizeEndpoint,
+            String tokenEndpoint
+    ) {
         this.config = config;
         this.httpClient = httpClient;
         this.browserOpener = browserOpener != null ? browserOpener : SpotifyAuthService::openInDefaultBrowser;
+        this.authorizeEndpoint = (authorizeEndpoint != null && !authorizeEndpoint.isBlank())
+                ? authorizeEndpoint
+                : DEFAULT_AUTHORIZE_ENDPOINT;
+        this.tokenEndpoint = (tokenEndpoint != null && !tokenEndpoint.isBlank())
+                ? tokenEndpoint
+                : DEFAULT_TOKEN_ENDPOINT;
         this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "spotify-auth-cleanup");
             t.setDaemon(true);
@@ -146,13 +170,48 @@ public class SpotifyAuthService {
             return CompletableFuture.completedFuture(false);
         }
 
+        String spotifyAuthorizeUrl = buildAuthorizeUrl(authorizeEndpoint, clientId, redirectUri, codeChallenge, state);
+
+        HttpHandler authorizeHandler = exchange -> {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendHtmlResponse(exchange, 405, "Method Not Allowed", "Invalid HTTP method.", true, 0);
+                return;
+            }
+
+            // Probe the Client ID before redirecting the browser so an invalid ID renders a styled
+            // error page locally instead of Spotify's blank "client_id: invalid" page.
+            String invalidClientDescription = probeInvalidClientDescription(clientId, redirectUri);
+            if (invalidClientDescription != null) {
+                handled.compareAndSet(false, true);
+                sendHtmlResponse(
+                        exchange,
+                        400,
+                        "Invalid Spotify Client ID",
+                        "Spotify rejected your Client ID (" + invalidClientDescription
+                                + "). Double-check the Client ID in your Spotify Developer Dashboard (Settings -> Client ID) and try again in Minecraft.",
+                        true,
+                        0
+                );
+                scheduleServerStop(ipv4Server);
+                notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.invalid_client_id"));
+                resultFuture.complete(false);
+                return;
+            }
+
+            exchange.getResponseHeaders().set("Location", spotifyAuthorizeUrl);
+            exchange.getResponseHeaders().set("Cache-Control", "no-store");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        };
+
         HttpHandler callbackHandler = exchange -> {
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-                sendHtmlResponse(exchange, 405, "Method Not Allowed", "Invalid HTTP method.");
+                sendHtmlResponse(exchange, 405, "Method Not Allowed", "Invalid HTTP method.", true, 0);
                 return;
             }
             if (!handled.compareAndSet(false, true)) {
-                sendHtmlResponse(exchange, 200, "Spotify Controller", "Authentication already processed. You may close this tab.");
+                sendHtmlResponse(exchange, 200, "Spotify Controller",
+                        "Authentication already processed. You may close this tab.", false, 0);
                 return;
             }
 
@@ -161,7 +220,8 @@ public class SpotifyAuthService {
             if (error != null && !error.isBlank()) {
                 String msg = SpotifyI18n.translate("status.spotify_controller.auth.failed", error);
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
-                        "Authorization was cancelled or denied (" + escapeHtml(error) + "). You can close this tab.");
+                        "Authorization was cancelled or denied (" + error + "). You can return to Minecraft and try again.",
+                        true, 0);
                 scheduleServerStop(ipv4Server);
                 notify.accept(msg);
                 resultFuture.complete(false);
@@ -173,7 +233,8 @@ public class SpotifyAuthService {
             if (returnedState == null || !returnedState.equals(state)) {
                 String msg = SpotifyI18n.translate("status.spotify_controller.auth.state_mismatch");
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
-                        "Invalid OAuth state parameter. Please try connecting again from Minecraft.");
+                        "Invalid OAuth state parameter. Please try connecting again from Minecraft.",
+                        true, 0);
                 scheduleServerStop(ipv4Server);
                 notify.accept(msg);
                 resultFuture.complete(false);
@@ -183,32 +244,62 @@ public class SpotifyAuthService {
             if (code == null || code.isBlank()) {
                 String msg = SpotifyI18n.translate("status.spotify_controller.auth.missing_code");
                 sendHtmlResponse(exchange, 400, "Spotify Connection Failed",
-                        "Missing authorization code in callback. Please try again.");
+                        "Missing authorization code in callback. Please try again.",
+                        true, 0);
                 scheduleServerStop(ipv4Server);
                 notify.accept(msg);
                 resultFuture.complete(false);
                 return;
             }
 
-            sendHtmlResponse(exchange, 200, "Spotify Connected",
-                    "Authorization received! Exchanging token... You can return to Minecraft now.");
-            scheduleServerStop(ipv4Server);
             notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchanging_code"));
-
-            exchangeCodeForTokens(clientId, code, redirectUri, codeVerifier)
-                    .whenComplete((ok, throwable) -> {
-                        if (throwable != null) {
-                            LOGGER.error("Token exchange failed", throwable);
-                            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_error", throwable.getMessage()));
-                            resultFuture.complete(false);
-                        } else if (Boolean.TRUE.equals(ok)) {
-                            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.connected"));
-                            resultFuture.complete(true);
-                        } else {
-                            notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_failed"));
-                            resultFuture.complete(false);
-                        }
-                    });
+            try {
+                boolean exchanged = Boolean.TRUE.equals(
+                        exchangeCodeForTokens(clientId, code, redirectUri, codeVerifier).get(16, TimeUnit.SECONDS)
+                );
+                if (exchanged) {
+                    sendHtmlResponse(
+                            exchange,
+                            200,
+                            "Spotify Connected",
+                            "Authorization received! You can return to Minecraft now.",
+                            false,
+                            CONNECTED_AUTO_CLOSE_SECONDS
+                    );
+                    scheduleServerStop(ipv4Server);
+                    notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.connected"));
+                    resultFuture.complete(true);
+                } else {
+                    sendHtmlResponse(
+                            exchange,
+                            400,
+                            "Spotify Connection Failed",
+                            "Failed to exchange the authorization code for Spotify tokens. Check your Client ID and Redirect URL in the Spotify Developer Dashboard and try again.",
+                            true,
+                            0
+                    );
+                    scheduleServerStop(ipv4Server);
+                    notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_failed"));
+                    resultFuture.complete(false);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                sendHtmlResponse(exchange, 500, "Spotify Connection Failed",
+                        "Token exchange was interrupted. Please return to Minecraft and try again.",
+                        true, 0);
+                scheduleServerStop(ipv4Server);
+                notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_error", e.getMessage()));
+                resultFuture.complete(false);
+            } catch (ExecutionException | TimeoutException e) {
+                Throwable cause = e instanceof ExecutionException && e.getCause() != null ? e.getCause() : e;
+                LOGGER.error("Token exchange failed", cause);
+                sendHtmlResponse(exchange, 500, "Spotify Connection Failed",
+                        "Token exchange failed (" + cause.getMessage() + "). Please try again in Minecraft.",
+                        true, 0);
+                scheduleServerStop(ipv4Server);
+                notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.exchange_error", cause.getMessage()));
+                resultFuture.complete(false);
+            }
         };
 
         ExecutorService callbackExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -217,6 +308,7 @@ public class SpotifyAuthService {
             return t;
         });
 
+        ipv4Server.createContext("/authorize", authorizeHandler);
         ipv4Server.createContext("/callback", callbackHandler);
         ipv4Server.setExecutor(callbackExecutor);
         ipv4Server.start();
@@ -226,6 +318,7 @@ public class SpotifyAuthService {
         try {
             HttpServer candidateIpv6 = HttpServer.create(new InetSocketAddress(loopbackIpv6Address(), port), 0);
             try {
+                candidateIpv6.createContext("/authorize", authorizeHandler);
                 candidateIpv6.createContext("/callback", callbackHandler);
                 candidateIpv6.setExecutor(callbackExecutor);
                 candidateIpv6.start();
@@ -255,10 +348,10 @@ public class SpotifyAuthService {
             }
         }, 3, TimeUnit.MINUTES);
 
-        String authUrl = buildAuthorizeUrl(clientId, redirectUri, codeChallenge, state);
+        String launcherUrl = "http://127.0.0.1:" + port + "/authorize";
         notify.accept(SpotifyI18n.translate("status.spotify_controller.auth.waiting_browser", redirectUri));
         try {
-            browserOpener.accept(URI.create(authUrl));
+            browserOpener.accept(URI.create(launcherUrl));
         } catch (Exception e) {
             LOGGER.error("Could not open browser for Spotify login", e);
             stopCallbackServerIfMatches(ipv4Server);
@@ -295,7 +388,7 @@ public class SpotifyAuthService {
                     "client_id", clientId
             ));
 
-            HttpRequest request = HttpRequest.newBuilder(URI.create(TOKEN_ENDPOINT))
+            HttpRequest request = HttpRequest.newBuilder(URI.create(tokenEndpoint))
                     .timeout(Duration.ofSeconds(15))
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .POST(HttpRequest.BodyPublishers.ofString(formBody))
@@ -346,6 +439,35 @@ public class SpotifyAuthService {
         cleanupExecutor.shutdownNow();
     }
 
+    private String probeInvalidClientDescription(String clientId, String redirectUri) {
+        try {
+            String formBody = buildFormBody(Map.of(
+                    "client_id", clientId,
+                    "grant_type", "authorization_code",
+                    "code", "spotify_controller_probe",
+                    "redirect_uri", redirectUri,
+                    "code_verifier", "spotify_controller_probe_verifier"
+            ));
+            HttpRequest request = HttpRequest.newBuilder(URI.create(tokenEndpoint))
+                    .timeout(Duration.ofSeconds(4))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(formBody))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 400) {
+                TokenError error = parseTokenError(response.body());
+                if ("invalid_client".equalsIgnoreCase(error.code())) {
+                    return error.description().isBlank() ? "Invalid client" : error.description();
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOGGER.debug("Pre-flight Client ID probe failed (continuing to browser auth): {}", e.getMessage());
+        }
+        return null;
+    }
+
     private CompletableFuture<Boolean> exchangeCodeForTokens(
             String clientId,
             String code,
@@ -360,7 +482,7 @@ public class SpotifyAuthService {
                 "code_verifier", codeVerifier
         ));
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(TOKEN_ENDPOINT))
+        HttpRequest request = HttpRequest.newBuilder(URI.create(tokenEndpoint))
                 .timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
@@ -394,30 +516,36 @@ public class SpotifyAuthService {
             }
         }
 
+        TokenError error = parseTokenError(body);
+        LOGGER.warn("Spotify token request failed (HTTP {}): {} - {}", status, error.code(), error.description());
+        if (isRefresh && ("invalid_grant".equals(error.code())
+                || "invalid_client".equals(error.code())
+                || "unauthorized_client".equals(error.code()))) {
+            LOGGER.warn("Spotify refresh token rejected ({}); clearing stored tokens.", error.code());
+            config.clearTokens();
+        }
+        return false;
+    }
+
+    private static TokenError parseTokenError(String body) {
         String errorCode = "";
-        String errorDescription = body;
+        String errorDescription = body != null ? body : "";
         try {
-            JsonElement parsed = JsonParser.parseString(body);
-            if (parsed.isJsonObject()) {
-                JsonObject obj = parsed.getAsJsonObject();
-                if (obj.has("error")) {
-                    errorCode = obj.get("error").getAsString();
-                }
-                if (obj.has("error_description")) {
-                    errorDescription = obj.get("error_description").getAsString();
+            if (body != null) {
+                JsonElement parsed = JsonParser.parseString(body);
+                if (parsed.isJsonObject()) {
+                    JsonObject obj = parsed.getAsJsonObject();
+                    if (obj.has("error")) {
+                        errorCode = obj.get("error").getAsString();
+                    }
+                    if (obj.has("error_description")) {
+                        errorDescription = obj.get("error_description").getAsString();
+                    }
                 }
             }
         } catch (Exception ignored) {
         }
-
-        LOGGER.warn("Spotify token request failed (HTTP {}): {} - {}", status, errorCode, errorDescription);
-        if (isRefresh && ("invalid_grant".equals(errorCode)
-                || "invalid_client".equals(errorCode)
-                || "unauthorized_client".equals(errorCode))) {
-            LOGGER.warn("Spotify refresh token rejected ({}); clearing stored tokens.", errorCode);
-            config.clearTokens();
-        }
-        return false;
+        return new TokenError(errorCode, errorDescription);
     }
 
     private void stopCallbackServer() {
@@ -454,7 +582,7 @@ public class SpotifyAuthService {
     }
 
     private void scheduleServerStop(HttpServer server) {
-        cleanupExecutor.schedule(() -> stopCallbackServerIfMatches(server), 1, TimeUnit.SECONDS);
+        cleanupExecutor.schedule(() -> stopCallbackServerIfMatches(server), 2, TimeUnit.SECONDS);
     }
 
     private static InetAddress loopbackIpv4Address() {
@@ -476,8 +604,14 @@ public class SpotifyAuthService {
         }
     }
 
-    private static String buildAuthorizeUrl(String clientId, String redirectUri, String codeChallenge, String state) {
-        return AUTHORIZE_ENDPOINT
+    private static String buildAuthorizeUrl(
+            String authorizeEndpoint,
+            String clientId,
+            String redirectUri,
+            String codeChallenge,
+            String state
+    ) {
+        return authorizeEndpoint
                 + "?response_type=code"
                 + "&client_id=" + urlEncode(clientId)
                 + "&scope=" + urlEncode(SCOPES)
@@ -514,8 +648,47 @@ public class SpotifyAuthService {
         return map;
     }
 
-    private static void sendHtmlResponse(HttpExchange exchange, int statusCode, String title, String message)
-            throws IOException {
+    private static void sendHtmlResponse(
+            HttpExchange exchange,
+            int statusCode,
+            String title,
+            String message,
+            boolean isError,
+            int autoCloseSeconds
+    ) throws IOException {
+        String accentHex = isError ? "#FF5252" : "#1DB954";
+        String countdownBlock = autoCloseSeconds > 0
+                ? "<p class=\"hint\" id=\"close-hint\">This tab will automatically close in <span id=\"countdown\">"
+                        + autoCloseSeconds + "</span> seconds.</p>"
+                : "";
+        String autoCloseScript = autoCloseSeconds > 0
+                ? """
+                  <script>
+                    (function () {
+                      var remaining = %d;
+                      var countdown = document.getElementById('countdown');
+                      var hint = document.getElementById('close-hint');
+                      var timer = setInterval(function () {
+                        remaining -= 1;
+                        if (countdown && remaining >= 0) {
+                          countdown.textContent = String(remaining);
+                        }
+                        if (remaining <= 0) {
+                          clearInterval(timer);
+                          window.open('', '_self');
+                          window.close();
+                          setTimeout(function () {
+                            if (hint) {
+                              hint.textContent = 'You may close this tab now.';
+                            }
+                          }, 400);
+                        }
+                      }, 1000);
+                    })();
+                  </script>
+                  """.formatted(autoCloseSeconds)
+                : "";
+
         String html = """
                 <!DOCTYPE html>
                 <html lang="en">
@@ -523,25 +696,38 @@ public class SpotifyAuthService {
                   <meta charset="UTF-8">
                   <title>%s</title>
                   <style>
-                    body { font-family: system-ui, sans-serif; background: #121212; color: #fff;
+                    body { font-family: system-ui, -apple-system, sans-serif; background: #121212; color: #fff;
                            display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
                     .card { background: #1e1e1e; border-radius: 12px; padding: 32px; max-width: 460px;
-                            text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
-                    h1 { color: #1DB954; margin-top: 0; font-size: 1.5rem; }
-                    p { color: #d4d4d4; line-height: 1.5; }
+                            text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+                            border-top: 4px solid %s; }
+                    h1 { color: %s; margin-top: 0; font-size: 1.5rem; }
+                    p { color: #d4d4d4; line-height: 1.5; margin-bottom: 0; }
+                    .hint { color: #9a9a9a; font-size: 0.9rem; margin-top: 12px; }
                   </style>
                 </head>
                 <body>
                   <div class="card">
                     <h1>%s</h1>
                     <p>%s</p>
+                    %s
                   </div>
+                  %s
                 </body>
                 </html>
-                """.formatted(escapeHtml(title), escapeHtml(title), escapeHtml(message));
+                """.formatted(
+                escapeHtml(title),
+                accentHex,
+                accentHex,
+                escapeHtml(title),
+                escapeHtml(message),
+                countdownBlock,
+                autoCloseScript
+        );
 
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.sendResponseHeaders(statusCode, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);

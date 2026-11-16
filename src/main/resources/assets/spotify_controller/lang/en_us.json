@@ -154,6 +154,7 @@
   "status.spotify_controller.error_http": "Spotify API error (HTTP %s).",
   "status.spotify_controller.error_http_detail": "Spotify API error (%s): %s",
   "status.spotify_controller.auth.missing_client_id": "Missing Spotify Client ID! Set it in the Spotify Config screen first.",
+  "status.spotify_controller.auth.invalid_client_id": "Invalid Spotify Client ID! Check your Client ID in the Spotify Developer Dashboard.",
   "status.spotify_controller.auth.server_start_failed": "Failed to start local callback server on port %s: %s",
   "status.spotify_controller.auth.failed": "Spotify authorization failed: %s",
   "status.spotify_controller.auth.state_mismatch": "Spotify callback rejected due to mismatched OAuth state.",

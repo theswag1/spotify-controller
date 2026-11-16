@@ -4,7 +4,6 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.noah.spotifycontroller.api.SpotifyApiClient;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
-import com.noah.spotifycontroller.auth.SpotifyAuthService;
 import com.noah.spotifycontroller.config.SpotifyConfig;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
@@ -23,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class SpotifyControllerScreen extends Screen {
     private static final int PANEL_WIDTH = 364;
-    private static final int PANEL_HEIGHT = 228;
+    private static final int PANEL_HEIGHT = 206;
     private static final int CONTENT_WIDTH = PANEL_WIDTH - 24;
     private static final int TEXT_AND_SEEK_WIDTH = 252;
     private static final int VOLUME_BAR_WIDTH = 178;
@@ -32,18 +31,14 @@ public class SpotifyControllerScreen extends Screen {
 
     private final Screen parent;
     private final SpotifyConfig config;
-    private final SpotifyAuthService authService;
     private final SpotifyApiClient apiClient;
     private final SpotifyPoller poller;
     private final AlbumArtManager albumArtManager;
-    private final SpotifyHudOverlay hudOverlay;
 
     private Button shuffleButton;
     private Button playPauseButton;
     private Button repeatButton;
-    private Button hudToggleButton;
 
-    private Component statusOverride;
     private boolean draggingVolume = false;
     private int pendingVolume = -1;
 
@@ -59,20 +54,16 @@ public class SpotifyControllerScreen extends Screen {
     public SpotifyControllerScreen(
             Screen parent,
             SpotifyConfig config,
-            SpotifyAuthService authService,
             SpotifyApiClient apiClient,
             SpotifyPoller poller,
-            AlbumArtManager albumArtManager,
-            SpotifyHudOverlay hudOverlay
+            AlbumArtManager albumArtManager
     ) {
         super(Component.translatable("screen.spotify_controller.controller.title"));
         this.parent = parent;
         this.config = config;
-        this.authService = authService;
         this.apiClient = apiClient;
         this.poller = poller;
         this.albumArtManager = albumArtManager;
-        this.hudOverlay = hudOverlay;
     }
 
     @Override
@@ -126,30 +117,9 @@ public class SpotifyControllerScreen extends Screen {
                         .build()
         );
 
-        hudToggleButton = addRenderableWidget(
-                Button.builder(getHudToggleLabel(), button -> {
-                    config.hudEnabled = !config.hudEnabled;
-                    config.save();
-                    button.setMessage(getHudToggleLabel());
-                    this.statusOverride = Component.translatable(config.hudEnabled
-                            ? "screen.spotify_controller.controller.status.hud_enabled"
-                            : "screen.spotify_controller.controller.status.hud_disabled");
-                }).bounds(left + 12, top + 174, 110, 20).build()
-        );
-
-        addRenderableWidget(
-                Button.builder(
-                        Component.translatable("screen.spotify_controller.controller.open_config"),
-                        button -> {
-                            Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
-                            client.setScreen(new SpotifyConfigScreen(this, config, authService, poller, hudOverlay));
-                        }
-                ).bounds(left + 127, top + 174, 120, 20).build()
-        );
-
         addRenderableWidget(
                 Button.builder(Component.translatable("screen.spotify_controller.config.done"), button -> onClose())
-                        .bounds(left + 252, top + 174, 100, 20)
+                        .bounds(left + 12, top + 174, CONTENT_WIDTH, 20)
                         .build()
         );
 
@@ -180,7 +150,6 @@ public class SpotifyControllerScreen extends Screen {
 
         renderNowPlayingCard(guiGraphics, mouseX, mouseY, left, top, track);
         renderVolumeBar(guiGraphics, mouseX, mouseY, left, top, track);
-        renderStatusFooter(guiGraphics, left, top);
     }
 
     @Override
@@ -351,26 +320,6 @@ public class SpotifyControllerScreen extends Screen {
         guiGraphics.drawCenteredString(this.font, label, barX + barWidth / 2, barY + 6, 0xFFFFFFFF);
     }
 
-    private void renderStatusFooter(GuiGraphics guiGraphics, int left, int top) {
-        boolean connected = config.hasValidAccessToken() || config.hasRefreshToken();
-        String prefix = SpotifyI18n.translate(connected
-                ? "screen.spotify_controller.controller.footer_connected_prefix"
-                : "screen.spotify_controller.controller.footer_disconnected_prefix");
-        int prefixColor = connected ? 0xFF1DB954 : 0xFFFFB74D;
-
-        String detail = statusOverride != null ? statusOverride.getString() : poller.getLastStatusMessage();
-        String fullText = this.font.plainSubstrByWidth(prefix + detail, CONTENT_WIDTH);
-
-        int footerY = top + 204;
-        if (fullText.startsWith(prefix)) {
-            int prefixWidth = this.font.width(prefix);
-            guiGraphics.drawString(this.font, prefix, left + 12, footerY, prefixColor);
-            guiGraphics.drawString(this.font, fullText.substring(prefix.length()), left + 12 + prefixWidth, footerY, 0xFFD0D0D0);
-        } else {
-            guiGraphics.drawString(this.font, fullText, left + 12, footerY, 0xFFD0D0D0);
-        }
-    }
-
     private void drawScrollingText(
             GuiGraphics guiGraphics,
             String text,
@@ -412,9 +361,6 @@ public class SpotifyControllerScreen extends Screen {
                     Component.translatable(SpotifyApiClient.getRepeatTranslationKey(repeat))
             ));
         }
-        if (hudToggleButton != null) {
-            hudToggleButton.setMessage(getHudToggleLabel());
-        }
     }
 
     private void togglePlayPause() {
@@ -453,18 +399,8 @@ public class SpotifyControllerScreen extends Screen {
     private void executePlaybackAction(CompletableFuture<SpotifyApiClient.ApiResult> action) {
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         action.whenComplete((result, throwable) -> client.execute(() -> {
-            if (throwable != null) {
-                this.statusOverride = Component.translatable(
-                        "screen.spotify_controller.controller.status.error",
-                        throwable.getMessage()
-                );
-                return;
-            }
-            if (result != null) {
-                this.statusOverride = Component.literal(result.message());
-                if (result.success()) {
-                    poller.triggerImmediateRefresh(350L);
-                }
+            if (throwable == null && result != null && result.success()) {
+                poller.triggerImmediateRefresh(350L);
             }
         }));
     }
@@ -498,14 +434,6 @@ public class SpotifyControllerScreen extends Screen {
             return optimisticVolume;
         }
         return track != null ? track.volumePercent() : -1;
-    }
-
-    private Component getHudToggleLabel() {
-        return Component.translatable(
-                config.hudEnabled
-                        ? "screen.spotify_controller.config.hud_on"
-                        : "screen.spotify_controller.config.hud_off"
-        );
     }
 
     private int panelLeft() {

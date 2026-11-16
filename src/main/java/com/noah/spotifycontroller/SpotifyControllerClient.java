@@ -443,11 +443,9 @@ public class SpotifyControllerClient {
         MinecraftGuiCompat.setScreen(client, new SpotifyControllerScreen(
                 MinecraftGuiCompat.getScreen(client),
                 config,
-                authService,
                 apiClient,
                 poller,
-                albumArtManager,
-                hudOverlay
+                albumArtManager
         ));
     }
 

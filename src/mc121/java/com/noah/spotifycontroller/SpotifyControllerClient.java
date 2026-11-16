@@ -406,11 +406,9 @@ public class SpotifyControllerClient {
         client.setScreen(new SpotifyControllerScreen(
                 client.screen,
                 config,
-                authService,
                 apiClient,
                 poller,
-                albumArtManager,
-                hudOverlay
+                albumArtManager
         ));
     }
 

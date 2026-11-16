@@ -33,6 +33,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -448,5 +449,126 @@ class SpotifyAuthAndConfigTest {
                 SpotifyI18n.translate("chat.spotify_controller.setup_prompt", "O")
         );
         assertEquals("HUD Widget: ON", SpotifyI18n.translate("screen.spotify_controller.config.hud_on"));
+    }
+
+    @Test
+    void showsErrorPageOnInvalidClientIdAndAutoClosingSuccessPage(@TempDir Path tempDir) throws Exception {
+        HttpServer mockSpotify = HttpServer.create(new InetSocketAddress(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), 0), 0);
+        mockSpotify.createContext("/api/token", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            byte[] respBytes;
+            int status;
+            if (body.contains("client_id=bad-client-id")) {
+                status = 400;
+                respBytes = "{\"error\":\"invalid_client\",\"error_description\":\"Invalid client\"}".getBytes(StandardCharsets.UTF_8);
+            } else if (body.contains("code=good-code")) {
+                status = 200;
+                respBytes = "{\"access_token\":\"atk\",\"refresh_token\":\"rtk\",\"expires_in\":3600}".getBytes(StandardCharsets.UTF_8);
+            } else {
+                status = 400;
+                respBytes = "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid authorization code\"}".getBytes(StandardCharsets.UTF_8);
+            }
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, respBytes.length);
+            exchange.getResponseBody().write(respBytes);
+            exchange.close();
+        });
+        mockSpotify.start();
+
+        int freePort;
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByAddress(new byte[]{127, 0, 0, 1}))) {
+            freePort = socket.getLocalPort();
+        }
+
+        String mockBase = "http://127.0.0.1:" + mockSpotify.getAddress().getPort();
+        HttpClient noRedirectClient = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+
+        try {
+            Path badConfigPath = tempDir.resolve("bad_client_id.json");
+            SpotifyConfig badConfig = SpotifyConfig.loadFrom(badConfigPath);
+            badConfig.callbackPort = freePort;
+            badConfig.setClientId("bad-client-id");
+
+            AtomicReference<URI> openedUri = new AtomicReference<>();
+            SpotifyAuthService badAuth = new SpotifyAuthService(
+                    badConfig,
+                    noRedirectClient,
+                    openedUri::set,
+                    mockBase + "/authorize",
+                    mockBase + "/api/token"
+            );
+            try {
+                CompletableFuture<Boolean> badFuture = badAuth.startAuthFlow(msg -> {});
+                assertNotNull(openedUri.get());
+
+                HttpResponse<String> errResp = noRedirectClient.send(
+                        HttpRequest.newBuilder(openedUri.get()).GET().build(),
+                        HttpResponse.BodyHandlers.ofString()
+                );
+                assertEquals(400, errResp.statusCode());
+                assertTrue(errResp.body().contains("Invalid Spotify Client ID"));
+                assertTrue(errResp.body().contains("#FF5252"));
+                assertFalse(badFuture.get(5, TimeUnit.SECONDS));
+            } finally {
+                badAuth.shutdown();
+            }
+
+            int freePort2;
+            try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByAddress(new byte[]{127, 0, 0, 1}))) {
+                freePort2 = socket.getLocalPort();
+            }
+
+            Path goodConfigPath = tempDir.resolve("good_client_id.json");
+            SpotifyConfig goodConfig = SpotifyConfig.loadFrom(goodConfigPath);
+            goodConfig.callbackPort = freePort2;
+            goodConfig.setClientId("valid-client-id");
+
+            AtomicReference<URI> goodOpenedUri = new AtomicReference<>();
+            SpotifyAuthService goodAuth = new SpotifyAuthService(
+                    goodConfig,
+                    noRedirectClient,
+                    goodOpenedUri::set,
+                    mockBase + "/authorize",
+                    mockBase + "/api/token"
+            );
+            try {
+                CompletableFuture<Boolean> goodFuture = goodAuth.startAuthFlow(msg -> {});
+                HttpResponse<String> redirectResp = noRedirectClient.send(
+                        HttpRequest.newBuilder(goodOpenedUri.get()).GET().build(),
+                        HttpResponse.BodyHandlers.ofString()
+                );
+                assertEquals(302, redirectResp.statusCode());
+                String location = redirectResp.headers().firstValue("Location").orElse("");
+                assertTrue(location.startsWith(mockBase + "/authorize"));
+
+                String state = "";
+                for (String pair : URI.create(location).getRawQuery().split("&")) {
+                    if (pair.startsWith("state=")) {
+                        state = pair.substring("state=".length());
+                    }
+                }
+                assertFalse(state.isEmpty());
+
+                HttpResponse<String> callbackResp = noRedirectClient.send(
+                        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + freePort2 + "/callback?code=good-code&state=" + state))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString()
+                );
+                assertEquals(200, callbackResp.statusCode());
+                assertTrue(callbackResp.body().contains("Spotify Connected"));
+                assertTrue(callbackResp.body().contains("seconds"));
+                assertTrue(callbackResp.body().contains("window.close()"));
+                assertTrue(goodFuture.get(5, TimeUnit.SECONDS));
+                assertEquals("atk", goodConfig.accessToken);
+                assertEquals("rtk", goodConfig.refreshToken);
+            } finally {
+                goodAuth.shutdown();
+            }
+        } finally {
+            mockSpotify.stop(0);
+        }
     }
 }

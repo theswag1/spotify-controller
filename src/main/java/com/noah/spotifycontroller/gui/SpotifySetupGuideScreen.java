@@ -248,7 +248,6 @@ public class SpotifySetupGuideScreen extends Screen {
 
     @Override
     public void onClose() {
-        persistDraftClientIdIfNonEmpty();
         MinecraftGuiCompat.setScreen(clientOrDefault(), this.parent);
     }
 
@@ -396,7 +395,6 @@ public class SpotifySetupGuideScreen extends Screen {
     }
 
     private void openConfigScreen() {
-        persistDraftClientIdIfNonEmpty();
         Screen configParent = (this.parent instanceof SpotifyConfigScreen existingConfig)
                 ? existingConfig.getParent()
                 : this.parent;
@@ -407,13 +405,6 @@ public class SpotifySetupGuideScreen extends Screen {
                 poller,
                 hudOverlay
         ));
-    }
-
-    private void persistDraftClientIdIfNonEmpty() {
-        String current = getCurrentClientIdInput();
-        if (!current.isEmpty() && !current.equals(config.clientId)) {
-            config.setClientId(current);
-        }
     }
 
     private String getCurrentClientIdInput() {

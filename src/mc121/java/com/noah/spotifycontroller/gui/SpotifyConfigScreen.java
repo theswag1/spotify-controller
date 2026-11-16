@@ -378,8 +378,8 @@ public class SpotifyConfigScreen extends Screen {
 
     private void flushPendingChanges() {
         this.draggingHud = false;
-        boolean savedByClientId = persistEditedClientIdIfChanged();
-        if (this.dirtyConfig && !savedByClientId) {
+        // Persist HUD/appearance edits without saving unconfirmed Client ID edits so tokens stay intact.
+        if (this.dirtyConfig) {
             config.save();
         }
         this.dirtyConfig = false;
@@ -538,18 +538,6 @@ public class SpotifyConfigScreen extends Screen {
         this.statusOverride = Component.translatable("screen.spotify_controller.config.status.disconnected");
         this.poller.refreshNow();
         updateButtonStates();
-    }
-
-    private boolean persistEditedClientIdIfChanged() {
-        if (clientIdBox == null) {
-            return false;
-        }
-        String enteredId = clientIdBox.getValue().trim();
-        if (!enteredId.equals(config.clientId)) {
-            config.setClientId(enteredId);
-            return true;
-        }
-        return false;
     }
 
     private Component getHudToggleLabel() {

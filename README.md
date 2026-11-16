@@ -15,12 +15,11 @@ Because everything runs client-side, it works in singleplayer and on any multipl
   - Displays `64x64` album art, marquee scrolling track / artist / album names, and a **clickable seek bar**.
   - Transport controls for **Shuffle**, **Previous**, **Play / Pause**, **Next**, and **Repeat** (`OFF` / `ALL` / `ONE`).
   - **Volume -10% / +10%** buttons plus an interactive **click-and-drag Volume bar**.
-  - Quick buttons to toggle the HUD widget and open the **Config / Move HUD** screen.
 - **Draggable, Resizable & Customizable HUD Widget**
   - Displays the current track's album art, song title, artist name, elapsed/total time, accent end strip, and smoothly interpolated progress bar.
   - **Drag-and-drop positioning** inside the Config screen (`O` or `/spotify config`) and **scroll-wheel resizing (`50%`–`200%` in `5%` steps)** while hovering over the HUD preview, plus a **Reset HUD** button.
   - **Customizable accent & playback bar color** via 8 color presets (`Green`, `Cyan`, `Blue`, `Purple`, `Pink`, `Red`, `Orange`, `White`) or a custom `#RRGGBB` hex input with a live color swatch.
-  - Automatically scrolls long text (marquee), hides with `F1`, and toggles via keybind (`\`), Config/Controller buttons, or `/spotify hud`.
+  - Automatically scrolls long text (marquee), hides with `F1`, and toggles via keybind (`\`), Config screen, or `/spotify hud`.
 - **Configurable Keybinds**
   - Bindings for opening the Config/Controller UI, toggling the HUD, Play/Pause, Next Track, and Previous Track under **Options -> Controls -> Key Binds -> Spotify Controller**, showing clean action-bar feedback above the hotbar.
 - **In-Game Configuration & OAuth 2.0 PKCE Auth**
@@ -35,15 +34,15 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 - **Minecraft:** `26.3`, `26.2`, `26.1.x` (`26.1`–`26.1.2`), or `1.21` / `1.21.1`
 - **Fabric:**
-  - `spotify-controller-0.6.0-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
-  - `spotify-controller-0.6.0-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
-  - `spotify-controller-0.6.0-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
-  - `spotify-controller-0.6.0-fabric-mc1.21.1.jar` (Fabric Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1`)
+  - `spotify-controller-0.6.1-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
+  - `spotify-controller-0.6.1-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
+  - `spotify-controller-0.6.1-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
+  - `spotify-controller-0.6.1-fabric-mc1.21.1.jar` (Fabric Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1`)
 - **NeoForge:**
-  - `spotify-controller-0.6.0-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
-  - `spotify-controller-0.6.0-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
-  - `spotify-controller-0.6.0-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
-  - `spotify-controller-0.6.0-neoforge-mc1.21.1.jar` (NeoForge `21.0.x` / `21.1.x`)
+  - `spotify-controller-0.6.1-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
+  - `spotify-controller-0.6.1-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
+  - `spotify-controller-0.6.1-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
+  - `spotify-controller-0.6.1-neoforge-mc1.21.1.jar` (NeoForge `21.0.x` / `21.1.x`)
 - **Java:** `25` for `26.x`, or `21+` for `1.21` / `1.21.1`
 - **Spotify Account:**
   - Viewing the currently playing track works on Free and Premium accounts.
@@ -115,5 +114,5 @@ Requires **JDK 25** (and **JDK 21** toolchain installed for NeoForge `1.21.1`).
 *(On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.)*
 
 The compiled jars are output to `build/libs/`:
-- `spotify-controller-0.6.0-fabric-mc26.3.jar` / `spotify-controller-0.6.0-fabric-mc26.2.jar` / `spotify-controller-0.6.0-fabric-mc26.1.x.jar` / `spotify-controller-0.6.0-fabric-mc1.21.1.jar` (Fabric)
-- `spotify-controller-0.6.0-neoforge-mc26.3.jar` / `spotify-controller-0.6.0-neoforge-mc26.2.jar` / `spotify-controller-0.6.0-neoforge-mc26.1.x.jar` / `spotify-controller-0.6.0-neoforge-mc1.21.1.jar` (NeoForge)
+- `spotify-controller-0.6.1-fabric-mc26.3.jar` / `spotify-controller-0.6.1-fabric-mc26.2.jar` / `spotify-controller-0.6.1-fabric-mc26.1.x.jar` / `spotify-controller-0.6.1-fabric-mc1.21.1.jar` (Fabric)
+- `spotify-controller-0.6.1-neoforge-mc26.3.jar` / `spotify-controller-0.6.1-neoforge-mc26.2.jar` / `spotify-controller-0.6.1-neoforge-mc26.1.x.jar` / `spotify-controller-0.6.1-neoforge-mc1.21.1.jar` (NeoForge)
