@@ -48,6 +48,8 @@ public class SpotifyConfig {
     public transient volatile String refreshToken = "";
     public transient volatile long tokenExpiresAtEpochSeconds = 0L;
     public volatile boolean hudEnabled = true;
+    public volatile boolean hudCompact = false;
+    public volatile boolean checkForUpdates = true;
     public volatile int hudX = DEFAULT_HUD_X;
     public volatile int hudY = DEFAULT_HUD_Y;
     public volatile float hudScale = DEFAULT_HUD_SCALE;
@@ -152,6 +154,8 @@ public class SpotifyConfig {
                 this.clientId = sanitizeString(loaded.clientId).trim();
                 this.callbackPort = isValidPort(loaded.callbackPort) ? loaded.callbackPort : DEFAULT_CALLBACK_PORT;
                 this.hudEnabled = loaded.hudEnabled;
+                this.hudCompact = loaded.hudCompact;
+                this.checkForUpdates = loaded.checkForUpdates;
                 this.hudX = loaded.hudX;
                 this.hudY = loaded.hudY;
                 this.hudScale = loaded.hudScale > 0.0f

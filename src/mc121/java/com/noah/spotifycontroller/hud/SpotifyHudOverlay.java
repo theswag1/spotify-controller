@@ -9,7 +9,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import com.noah.spotifycontroller.util.SpotifyI18n;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /**
  * Renders the compact "Now Playing" Spotify card on the in-game HUD (Minecraft 1.21.1).
@@ -17,6 +20,8 @@ import net.minecraft.resources.ResourceLocation;
 public class SpotifyHudOverlay {
     public static final int CARD_WIDTH = 190;
     public static final int CARD_HEIGHT = 46;
+    public static final int COMPACT_WIDTH = 190;
+    public static final int COMPACT_HEIGHT = 10;
     private static final int ART_SIZE = 36;
     private static final long MARQUEE_PAUSE_MS = 1500L;
     private static final double MARQUEE_PIXELS_PER_SECOND = 24.0;
@@ -51,13 +56,14 @@ public class SpotifyHudOverlay {
             return;
         }
 
-        int x = clampX(config.hudX, guiGraphics.guiWidth(), config.hudScale);
-        int y = clampY(config.hudY, guiGraphics.guiHeight(), config.hudScale);
+        int x = clampX(config.hudX, guiGraphics.guiWidth(), config.hudScale, config.hudCompact);
+        int y = clampY(config.hudY, guiGraphics.guiHeight(), config.hudScale, config.hudCompact);
         renderCard(guiGraphics, client.font, track, x, y, config.hudScale);
     }
 
     /**
-     * Renders the Spotify "Now Playing" card at the given screen coordinates and scale factor.
+     * Renders the Spotify "Now Playing" widget (full card, or one text line in compact mode)
+     * at the given screen coordinates and scale factor.
      */
     public void renderCard(GuiGraphics guiGraphics, Font font, TrackState track, int x, int y, float scale) {
         float clampedScale = SpotifyConfig.clampHudScale(scale);
@@ -66,6 +72,13 @@ public class SpotifyHudOverlay {
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate((float) x, (float) y, 0.0f);
         guiGraphics.pose().scale(clampedScale, clampedScale, 1.0f);
+
+        if (config.hudCompact) {
+            String line = SpotifyI18n.translate("hud.spotify_controller.compact_line", track.trackName(), track.artistName());
+            drawScrollingText(guiGraphics, font, line, 0, 1, COMPACT_WIDTH, accentColor, System.currentTimeMillis());
+            guiGraphics.pose().popPose();
+            return;
+        }
 
         // Card background, border, and end accent strip
         guiGraphics.fill(0, 0, CARD_WIDTH, CARD_HEIGHT, 0xCC121212);
@@ -110,36 +123,36 @@ public class SpotifyHudOverlay {
         guiGraphics.pose().popPose();
     }
 
-    public static int getScaledWidth(float scale) {
-        return Math.round(CARD_WIDTH * SpotifyConfig.clampHudScale(scale));
+    public static int getScaledWidth(float scale, boolean compact) {
+        return Math.round((compact ? COMPACT_WIDTH : CARD_WIDTH) * SpotifyConfig.clampHudScale(scale));
     }
 
-    public static int getScaledHeight(float scale) {
-        return Math.round(CARD_HEIGHT * SpotifyConfig.clampHudScale(scale));
+    public static int getScaledHeight(float scale, boolean compact) {
+        return Math.round((compact ? COMPACT_HEIGHT : CARD_HEIGHT) * SpotifyConfig.clampHudScale(scale));
     }
 
     /**
      * Clamps the scaled HUD X coordinate inside the visible screen bounds.
      */
-    public static int clampX(int x, int screenWidth, float scale) {
-        int width = getScaledWidth(scale);
+    public static int clampX(int x, int screenWidth, float scale, boolean compact) {
+        int width = getScaledWidth(scale, compact);
         return Math.max(2, Math.min(x, Math.max(2, screenWidth - width - 2)));
     }
 
     /**
      * Clamps the scaled HUD Y coordinate inside the visible screen bounds.
      */
-    public static int clampY(int y, int screenHeight, float scale) {
-        int height = getScaledHeight(scale);
+    public static int clampY(int y, int screenHeight, float scale, boolean compact) {
+        int height = getScaledHeight(scale, compact);
         return Math.max(2, Math.min(y, Math.max(2, screenHeight - height - 2)));
     }
 
     /**
-     * Returns whether the pointer coordinates fall within the scaled HUD card rectangle.
+     * Returns whether the pointer coordinates fall within the scaled HUD widget rectangle.
      */
-    public static boolean isPointInsideCard(double mouseX, double mouseY, int cardX, int cardY, float scale) {
-        int width = getScaledWidth(scale);
-        int height = getScaledHeight(scale);
+    public static boolean isPointInsideCard(double mouseX, double mouseY, int cardX, int cardY, float scale, boolean compact) {
+        int width = getScaledWidth(scale, compact);
+        int height = getScaledHeight(scale, compact);
         return mouseX >= cardX
                 && mouseX < cardX + width
                 && mouseY >= cardY
@@ -190,7 +203,15 @@ public class SpotifyHudOverlay {
         }
 
         int offset = computeScrollOffset(textWidth, maxWidth, nowMillis);
-        guiGraphics.enableScissor(x, y, x + maxWidth, y + font.lineHeight);
+        // 1.21.1 enableScissor takes screen coordinates and ignores the pose, so map the clip box
+        // through the HUD's translate/scale; otherwise long titles are clipped away entirely.
+        Matrix4f matrix = guiGraphics.pose().last().pose();
+        Vector3f min = matrix.transformPosition(x, y, 0.0f, new Vector3f());
+        Vector3f max = matrix.transformPosition(x + maxWidth, y + font.lineHeight, 0.0f, new Vector3f());
+        guiGraphics.enableScissor(
+                (int) Math.floor(min.x), (int) Math.floor(min.y),
+                (int) Math.ceil(max.x), (int) Math.ceil(max.y)
+        );
         guiGraphics.drawString(font, text, x - offset, y, color);
         guiGraphics.disableScissor();
     }

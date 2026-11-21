@@ -9,6 +9,7 @@ import com.noah.spotifycontroller.gui.SpotifySetupGuideScreen;
 import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import com.noah.spotifycontroller.util.SpotifyI18n;
+import com.noah.spotifycontroller.util.UpdateChecker;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -178,26 +179,36 @@ class SpotifyAuthAndConfigTest {
 
     @Test
     void clampsAndPersistsHudPositionAndHitTestsCardBounds(@TempDir Path tempDir) {
-        assertEquals(2, SpotifyHudOverlay.clampX(-50, 800, 1.0f));
-        assertEquals(800 - SpotifyHudOverlay.CARD_WIDTH - 2, SpotifyHudOverlay.clampX(2000, 800, 1.0f));
-        assertEquals(2, SpotifyHudOverlay.clampY(-10, 600, 1.0f));
-        assertEquals(600 - SpotifyHudOverlay.CARD_HEIGHT - 2, SpotifyHudOverlay.clampY(2000, 600, 1.0f));
+        assertEquals(2, SpotifyHudOverlay.clampX(-50, 800, 1.0f, false));
+        assertEquals(800 - SpotifyHudOverlay.CARD_WIDTH - 2, SpotifyHudOverlay.clampX(2000, 800, 1.0f, false));
+        assertEquals(2, SpotifyHudOverlay.clampY(-10, 600, 1.0f, false));
+        assertEquals(600 - SpotifyHudOverlay.CARD_HEIGHT - 2, SpotifyHudOverlay.clampY(2000, 600, 1.0f, false));
 
-        assertTrue(SpotifyHudOverlay.isPointInsideCard(10, 20, 10, 20, 1.0f));
-        assertTrue(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH - 1, 20 + SpotifyHudOverlay.CARD_HEIGHT - 1, 10, 20, 1.0f));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(9, 20, 10, 20, 1.0f));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH, 20, 10, 20, 1.0f));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.CARD_HEIGHT, 10, 20, 1.0f));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10, 20, 10, 20, 1.0f, false));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH - 1, 20 + SpotifyHudOverlay.CARD_HEIGHT - 1, 10, 20, 1.0f, false));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(9, 20, 10, 20, 1.0f, false));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH, 20, 10, 20, 1.0f, false));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.CARD_HEIGHT, 10, 20, 1.0f, false));
+
+        // Compact mode uses the one-line text box for clamping and hit-testing.
+        assertEquals(600 - SpotifyHudOverlay.COMPACT_HEIGHT - 2, SpotifyHudOverlay.clampY(2000, 600, 1.0f, true));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.COMPACT_HEIGHT - 1, 10, 20, 1.0f, true));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.COMPACT_HEIGHT, 10, 20, 1.0f, true));
+        assertEquals(15, SpotifyHudOverlay.getScaledHeight(1.5f, true));
 
         Path configPath = tempDir.resolve("hud_position.json");
         SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
         assertEquals(SpotifyConfig.DEFAULT_HUD_X, config.hudX);
         assertEquals(SpotifyConfig.DEFAULT_HUD_Y, config.hudY);
 
+        assertFalse(config.hudCompact);
+        assertTrue(config.checkForUpdates);
+        config.hudCompact = true;
         config.setHudPosition(240, 135);
         SpotifyConfig reloaded = SpotifyConfig.loadFrom(configPath);
         assertEquals(240, reloaded.hudX);
         assertEquals(135, reloaded.hudY);
+        assertTrue(reloaded.hudCompact);
 
         reloaded.resetHudPosition();
         SpotifyConfig resetReloaded = SpotifyConfig.loadFrom(configPath);
@@ -241,12 +252,12 @@ class SpotifyAuthAndConfigTest {
         assertEquals(1.25f, SpotifyConfig.clampHudScale(1.24f), 0.001f);
         assertEquals(2.0f, SpotifyConfig.clampHudScale(5.0f), 0.001f);
 
-        assertEquals(285, SpotifyHudOverlay.getScaledWidth(1.5f));
-        assertEquals(69, SpotifyHudOverlay.getScaledHeight(1.5f));
-        assertEquals(800 - 285 - 2, SpotifyHudOverlay.clampX(750, 800, 1.5f));
-        assertEquals(600 - 69 - 2, SpotifyHudOverlay.clampY(580, 600, 1.5f));
-        assertTrue(SpotifyHudOverlay.isPointInsideCard(280, 75, 10, 10, 1.5f));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(280, 75, 10, 10, 1.0f));
+        assertEquals(285, SpotifyHudOverlay.getScaledWidth(1.5f, false));
+        assertEquals(69, SpotifyHudOverlay.getScaledHeight(1.5f, false));
+        assertEquals(800 - 285 - 2, SpotifyHudOverlay.clampX(750, 800, 1.5f, false));
+        assertEquals(600 - 69 - 2, SpotifyHudOverlay.clampY(580, 600, 1.5f, false));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(280, 75, 10, 10, 1.5f, false));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(280, 75, 10, 10, 1.0f, false));
 
         Path configPath = tempDir.resolve("hud_appearance.json");
         SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
@@ -570,6 +581,37 @@ class SpotifyAuthAndConfigTest {
         } finally {
             mockSpotify.stop(0);
         }
+    }
+
+    @Test
+    void comparesVersionsAndParsesLatestGithubRelease() {
+        assertTrue(UpdateChecker.compareVersions("v0.7.0", "0.6.2") > 0);
+        assertTrue(UpdateChecker.compareVersions("0.6.2", "0.7.0") < 0);
+        assertEquals(0, UpdateChecker.compareVersions("v0.7.0", "0.7"));
+        assertTrue(UpdateChecker.compareVersions("0.10.0", "0.9.9") > 0);
+        assertEquals(0, UpdateChecker.compareVersions("v0.7.0-beta", "0.7.0"));
+        assertEquals(0, UpdateChecker.compareVersions("latest", "0.6.2"));
+        assertEquals(0, UpdateChecker.compareVersions(null, "0.6.2"));
+
+        Optional<UpdateChecker.Release> release = UpdateChecker.parseLatestRelease(
+                "{\"tag_name\":\"v0.7.0\",\"html_url\":\"https://github.com/theswag1/spotify-controller/releases/tag/v0.7.0\"}");
+        assertTrue(release.isPresent());
+        assertEquals("v0.7.0", release.get().version());
+        assertEquals("https://github.com/theswag1/spotify-controller/releases/tag/v0.7.0", release.get().url());
+
+        // A link outside this repo's releases is never shown; fall back to the releases page.
+        Optional<UpdateChecker.Release> foreign = UpdateChecker.parseLatestRelease(
+                "{\"tag_name\":\"v9.9.9\",\"html_url\":\"https://evil.example/download\"}");
+        assertEquals(UpdateChecker.RELEASES_URL, foreign.orElseThrow().url());
+
+        assertTrue(UpdateChecker.parseLatestRelease("{\"message\":\"API rate limit exceeded\"}").isEmpty());
+        assertTrue(UpdateChecker.parseLatestRelease("not json").isEmpty());
+
+        // processResources must have expanded ${version} into version.txt.
+        String current = UpdateChecker.loadCurrentVersion();
+        assertFalse(current.isEmpty());
+        assertFalse(current.contains("-"), "loader/MC suffix should be stripped: " + current);
+        assertTrue(UpdateChecker.compareVersions(current, "0.0.1") > 0);
     }
 
     @Test

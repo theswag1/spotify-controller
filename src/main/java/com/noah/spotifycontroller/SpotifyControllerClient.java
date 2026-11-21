@@ -14,10 +14,12 @@ import com.noah.spotifycontroller.hud.AlbumArtManager;
 import com.noah.spotifycontroller.hud.SpotifyHudOverlay;
 import com.noah.spotifycontroller.util.MinecraftGuiCompat;
 import com.noah.spotifycontroller.util.SpotifyI18n;
+import com.noah.spotifycontroller.util.UpdateChecker;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
@@ -49,6 +51,8 @@ public class SpotifyControllerClient {
     private static SpotifyPoller poller;
     private static AlbumArtManager albumArtManager;
     private static SpotifyHudOverlay hudOverlay;
+    private static UpdateChecker updateChecker;
+    private static boolean updateNoticeSent = false;
 
     private static KeyMapping openControllerKey;
     private static KeyMapping openConfigKey;
@@ -77,6 +81,11 @@ public class SpotifyControllerClient {
 
         albumArtManager = new AlbumArtManager(httpClient);
         hudOverlay = new SpotifyHudOverlay(config, poller, albumArtManager);
+
+        updateChecker = new UpdateChecker(UpdateChecker.loadCurrentVersion());
+        if (config.checkForUpdates) {
+            updateChecker.start(httpClient);
+        }
         LOGGER.info("Spotify Controller initialized");
     }
 
@@ -151,6 +160,7 @@ public class SpotifyControllerClient {
      */
     public static void onClientTick(Minecraft client) {
         checkSetupPromptOnWorldJoin(client);
+        checkUpdateNotice(client);
 
         if (pendingOpenControllerScreen) {
             pendingOpenControllerScreen = false;
@@ -425,6 +435,35 @@ public class SpotifyControllerClient {
             );
         }
         wasInWorld = inWorld;
+    }
+
+    /**
+     * Sends one chat notice per session, once in a world, if the background check found a newer release.
+     */
+    private static void checkUpdateNotice(Minecraft client) {
+        if (updateNoticeSent || updateChecker == null || client.player == null || client.level == null) {
+            return;
+        }
+        UpdateChecker.Release release = updateChecker.getNewerRelease();
+        if (release == null) {
+            return;
+        }
+        updateNoticeSent = true;
+        Component download = Component.translatable("chat.spotify_controller.update_download")
+                .withStyle(style -> style
+                        .withColor(ChatFormatting.AQUA)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent.OpenUrl(URI.create(release.url()))));
+        client.player.sendSystemMessage(
+                Component.translatable(
+                        "chat.spotify_controller.prefix",
+                        Component.translatable(
+                                "chat.spotify_controller.update_available",
+                                release.version(),
+                                "v" + updateChecker.getCurrentVersion()
+                        ).append(download)
+                ).withStyle(ChatFormatting.YELLOW)
+        );
     }
 
     private static void openControllerScreen(Minecraft client) {

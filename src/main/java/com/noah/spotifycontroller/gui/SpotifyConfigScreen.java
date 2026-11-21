@@ -121,8 +121,7 @@ public class SpotifyConfigScreen extends Screen {
                 Button.builder(
                         getHudToggleLabel(),
                         button -> {
-                            config.hudEnabled = !config.hudEnabled;
-                            config.save();
+                            cycleHudMode();
                             button.setMessage(getHudToggleLabel());
                         }
                 ).bounds(left, top + 98, HALF_BUTTON_WIDTH, 20).build()
@@ -291,9 +290,9 @@ public class SpotifyConfigScreen extends Screen {
         }
         if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             float scale = SpotifyConfig.clampHudScale(config.hudScale);
-            int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, scale);
-            int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, scale);
-            if (SpotifyHudOverlay.isPointInsideCard(event.x(), event.y(), hudX, hudY, scale)) {
+            int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, scale, config.hudCompact);
+            int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, scale, config.hudCompact);
+            if (SpotifyHudOverlay.isPointInsideCard(event.x(), event.y(), hudX, hudY, scale, config.hudCompact)) {
                 this.draggingHud = true;
                 this.dragOffsetX = (int) Math.round(event.x()) - hudX;
                 this.dragOffsetY = (int) Math.round(event.y()) - hudY;
@@ -307,8 +306,8 @@ public class SpotifyConfigScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         if (this.draggingHud && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             float scale = SpotifyConfig.clampHudScale(config.hudScale);
-            config.hudX = SpotifyHudOverlay.clampX((int) Math.round(event.x()) - dragOffsetX, this.width, scale);
-            config.hudY = SpotifyHudOverlay.clampY((int) Math.round(event.y()) - dragOffsetY, this.height, scale);
+            config.hudX = SpotifyHudOverlay.clampX((int) Math.round(event.x()) - dragOffsetX, this.width, scale, config.hudCompact);
+            config.hudY = SpotifyHudOverlay.clampY((int) Math.round(event.y()) - dragOffsetY, this.height, scale, config.hudCompact);
             this.dirtyConfig = true;
             return true;
         }
@@ -335,14 +334,14 @@ public class SpotifyConfigScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (scrollY != 0.0) {
             float currentScale = SpotifyConfig.clampHudScale(config.hudScale);
-            int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, currentScale);
-            int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, currentScale);
-            if (this.draggingHud || SpotifyHudOverlay.isPointInsideCard(mouseX, mouseY, hudX, hudY, currentScale)) {
+            int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, currentScale, config.hudCompact);
+            int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, currentScale, config.hudCompact);
+            if (this.draggingHud || SpotifyHudOverlay.isPointInsideCard(mouseX, mouseY, hudX, hudY, currentScale, config.hudCompact)) {
                 float delta = scrollY > 0.0 ? SpotifyConfig.HUD_SCALE_STEP : -SpotifyConfig.HUD_SCALE_STEP;
                 float nextScale = SpotifyConfig.clampHudScale(currentScale + delta);
                 config.hudScale = nextScale;
-                config.hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, nextScale);
-                config.hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, nextScale);
+                config.hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, nextScale, config.hudCompact);
+                config.hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, nextScale, config.hudCompact);
                 this.dirtyConfig = true;
                 int percent = Math.round(nextScale * 100.0f);
                 this.statusOverride = Component.translatable("screen.spotify_controller.config.status.hud_size", percent);
@@ -391,10 +390,10 @@ public class SpotifyConfigScreen extends Screen {
             TrackState track
     ) {
         float scale = SpotifyConfig.clampHudScale(config.hudScale);
-        int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, scale);
-        int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, scale);
-        int scaledWidth = SpotifyHudOverlay.getScaledWidth(scale);
-        int scaledHeight = SpotifyHudOverlay.getScaledHeight(scale);
+        int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, scale, config.hudCompact);
+        int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, scale, config.hudCompact);
+        int scaledWidth = SpotifyHudOverlay.getScaledWidth(scale, config.hudCompact);
+        int scaledHeight = SpotifyHudOverlay.getScaledHeight(scale, config.hudCompact);
 
         TrackState displayTrack = track != null ? track : new TrackState(
                 "preview",
@@ -415,7 +414,7 @@ public class SpotifyConfigScreen extends Screen {
             hudOverlay.renderCard(guiGraphics, this.font, displayTrack, hudX, hudY, scale);
         }
 
-        boolean hudHovered = SpotifyHudOverlay.isPointInsideCard(mouseX, mouseY, hudX, hudY, scale);
+        boolean hudHovered = SpotifyHudOverlay.isPointInsideCard(mouseX, mouseY, hudX, hudY, scale, config.hudCompact);
         int accentArgb = config.getAccentColorArgb();
         int borderColor = (draggingHud || hudHovered) ? accentArgb : (0xAA000000 | (accentArgb & 0x00FFFFFF));
         guiGraphics.outline(
@@ -539,12 +538,31 @@ public class SpotifyConfigScreen extends Screen {
         updateButtonStates();
     }
 
+    /**
+     * Cycles the HUD widget Full -> Compact -> Off -> Full. Off keeps the chosen style for the keybind toggle.
+     */
+    private void cycleHudMode() {
+        if (!config.hudEnabled) {
+            config.hudEnabled = true;
+            config.hudCompact = false;
+        } else if (!config.hudCompact) {
+            config.hudCompact = true;
+        } else {
+            config.hudEnabled = false;
+        }
+        // Keep the widget on screen when switching between the tall card and the one-line compact box.
+        config.hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, config.hudScale, config.hudCompact);
+        config.hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, config.hudScale, config.hudCompact);
+        config.save();
+    }
+
     private Component getHudToggleLabel() {
-        return Component.translatable(
-                config.hudEnabled
-                        ? "screen.spotify_controller.config.hud_on"
-                        : "screen.spotify_controller.config.hud_off"
-        );
+        if (!config.hudEnabled) {
+            return Component.translatable("screen.spotify_controller.config.hud_off");
+        }
+        return Component.translatable(config.hudCompact
+                ? "screen.spotify_controller.config.hud_compact"
+                : "screen.spotify_controller.config.hud_on");
     }
 
     private void updateButtonStates() {
