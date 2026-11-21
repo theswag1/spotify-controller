@@ -30,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -411,11 +412,11 @@ class SpotifyAuthAndConfigTest {
     void computesAdaptiveAndDynamicPollIntervals(@TempDir Path tempDir) {
         TrackState playingTrack = new TrackState(
                 "track-1", "Sweden", "C418", "Minecraft - Volume Alpha", "",
-                10_000L, 200_000L, true, 80, false, "off", System.currentTimeMillis()
+                10_000L, 200_000L, true, 80, false, "off", System.currentTimeMillis(), ""
         );
         TrackState pausedTrack = new TrackState(
                 "track-1", "Sweden", "C418", "Minecraft - Volume Alpha", "",
-                10_000L, 200_000L, false, 80, false, "off", System.currentTimeMillis()
+                10_000L, 200_000L, false, 80, false, "off", System.currentTimeMillis(), ""
         );
 
         assertEquals(3, SpotifyPoller.computeEffectivePollIntervalSeconds(3, playingTrack, true, true, false));
@@ -580,6 +581,93 @@ class SpotifyAuthAndConfigTest {
             }
         } finally {
             mockSpotify.stop(0);
+        }
+    }
+
+    @Test
+    void parsesQueueShareLinksAndHudHoverControls() {
+        // Queue: tracks and episodes, capped at 10, empty on bad input.
+        StringBuilder queue = new StringBuilder("{\"queue\":[");
+        queue.append("{\"name\":\"Sweden\",\"artists\":[{\"name\":\"C418\"}]},");
+        queue.append("{\"name\":\"Ep 1\",\"show\":{\"publisher\":\"Some Podcast\"}}");
+        for (int i = 0; i < 12; i++) {
+            queue.append(",{\"name\":\"T").append(i).append("\",\"artists\":[{\"name\":\"A\"}]}");
+        }
+        queue.append("]}");
+        List<TrackState.QueueItem> items = TrackState.parseQueue(queue.toString());
+        assertEquals(10, items.size());
+        assertEquals(new TrackState.QueueItem("Sweden", "C418"), items.get(0));
+        assertEquals(new TrackState.QueueItem("Ep 1", "Some Podcast"), items.get(1));
+        assertTrue(TrackState.parseQueue("{\"queue\":[]}").isEmpty());
+        assertTrue(TrackState.parseQueue("not json").isEmpty());
+
+        // Share link: only open.spotify.com URLs are kept.
+        String player = "{\"is_playing\":true,\"item\":{\"id\":\"abc\",\"name\":\"Sweden\",\"duration_ms\":1000,"
+                + "\"artists\":[{\"name\":\"C418\"}],\"external_urls\":{\"spotify\":\"%s\"}}}";
+        assertEquals("https://open.spotify.com/track/abc",
+                TrackState.fromPlayerJson(player.formatted("https://open.spotify.com/track/abc")).orElseThrow().spotifyUrl());
+        assertEquals("", TrackState.fromPlayerJson(player.formatted("https://evil.example/x")).orElseThrow().spotifyUrl());
+
+        // Chat message: URL kept whole, text trimmed to 256 chars, illegal chat characters removed.
+        String url = "https://open.spotify.com/track/abc";
+        String longMessage = TrackState.fitChatMessage("♪ " + "x".repeat(400), url);
+        assertEquals(TrackState.MAX_CHAT_LENGTH, longMessage.length());
+        assertTrue(longMessage.endsWith(" " + url));
+        assertEquals("♪ ab " + url, TrackState.fitChatMessage("♪ a§b\n", url));
+
+        // Hover controls: strip below the widget, or above it at the bottom of the screen.
+        int stripY = SpotifyHudOverlay.controlStripY(10, 46, 600);
+        assertEquals(10 + 46 + 2, stripY);
+        assertEquals(0, SpotifyHudOverlay.hoverControlAt(12, stripY + 1, 10, stripY));
+        assertEquals(1, SpotifyHudOverlay.hoverControlAt(10 + 18 + 1, stripY + 1, 10, stripY));
+        assertEquals(2, SpotifyHudOverlay.hoverControlAt(10 + 36 + 1, stripY + 1, 10, stripY));
+        assertEquals(-1, SpotifyHudOverlay.hoverControlAt(10 + 16, stripY + 1, 10, stripY));
+        assertEquals(-1, SpotifyHudOverlay.hoverControlAt(12, 20, 10, stripY));
+        assertTrue(SpotifyHudOverlay.isInHoverZone(15, stripY - 1, 10, 10, 190, 46, stripY));
+        assertEquals(580 - 2 - SpotifyHudOverlay.CONTROL_SIZE, SpotifyHudOverlay.controlStripY(580, 10, 600));
+    }
+
+    @Test
+    void schedulesEndOfTrackPollAndToleratesRedundantPlayPause() {
+        long now = System.currentTimeMillis();
+        TrackState nearEnd = new TrackState("t", "Song", "Artist", "", "", 198_000L, 200_000L,
+                true, 50, false, "off", now, "");
+        TrackState midSong = new TrackState("t", "Song", "Artist", "", "", 60_000L, 200_000L,
+                true, 50, false, "off", now, "");
+        TrackState pausedNearEnd = new TrackState("t", "Song", "Artist", "", "", 198_000L, 200_000L,
+                false, 50, false, "off", now, "");
+        // 2s left with a 3s interval: poll 750ms after the song should end instead of waiting a full interval.
+        assertEquals(2_750L, SpotifyPoller.computeEndOfTrackRefreshDelayMs(nearEnd, 3));
+        assertEquals(-1L, SpotifyPoller.computeEndOfTrackRefreshDelayMs(midSong, 3));
+        assertEquals(-1L, SpotifyPoller.computeEndOfTrackRefreshDelayMs(pausedNearEnd, 3));
+        assertEquals(-1L, SpotifyPoller.computeEndOfTrackRefreshDelayMs(null, 3));
+
+        assertTrue(SpotifyApiClient.isRedundantPlaybackError(
+                "{\"error\":{\"status\":403,\"message\":\"Player command failed: Restriction violated\",\"reason\":\"UNKNOWN\"}}"));
+        assertTrue(SpotifyApiClient.isRedundantPlaybackError(
+                "{\"error\":{\"status\":403,\"message\":\"Player command failed\",\"reason\":\"ALREADY_PAUSED\"}}"));
+        assertFalse(SpotifyApiClient.isRedundantPlaybackError(
+                "{\"error\":{\"status\":403,\"message\":\"Player command failed: Premium required\",\"reason\":\"PREMIUM_REQUIRED\"}}"));
+        assertFalse(SpotifyApiClient.isRedundantPlaybackError(""));
+    }
+
+    @Test
+    void hoverPlayPauseFlipsImmediatelyAndAlternates(@TempDir Path tempDir) {
+        SpotifyConfig config = SpotifyConfig.loadFrom(tempDir.resolve("hover.json"));
+        HttpClient httpClient = HttpClient.newHttpClient();
+        SpotifyAuthService authService = new SpotifyAuthService(config, httpClient, uri -> {});
+        SpotifyPoller poller = new SpotifyPoller(config, new SpotifyApiClient(authService, httpClient));
+        try {
+            SpotifyHudOverlay overlay = new SpotifyHudOverlay(config, poller, new AlbumArtManager(httpClient));
+            assertFalse(overlay.isEffectivelyPlaying());
+            // First click resumes and the icon state flips right away; a quick second click pauses, not resumes again.
+            assertTrue(overlay.togglePlayingOptimistically());
+            assertTrue(overlay.isEffectivelyPlaying());
+            assertFalse(overlay.togglePlayingOptimistically());
+            assertFalse(overlay.isEffectivelyPlaying());
+        } finally {
+            poller.stop();
+            authService.shutdown();
         }
     }
 

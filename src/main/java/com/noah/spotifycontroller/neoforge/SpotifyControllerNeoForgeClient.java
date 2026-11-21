@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.noah.spotifycontroller.SpotifyControllerClient;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.resources.Identifier;
@@ -17,6 +18,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
@@ -48,6 +50,17 @@ public class SpotifyControllerNeoForgeClient {
                 ClientTickEvent.Post.class,
                 event -> SpotifyControllerClient.onClientTick(Minecraft.getInstance())
         );
+        // HUD hover controls on any in-world screen that frees the cursor (chat, inventory...).
+        NeoForge.EVENT_BUS.addListener(ScreenEvent.Render.Post.class, event ->
+                SpotifyControllerClient.getHudOverlay().renderHoverControls(
+                        event.getGuiGraphics(), event.getMouseX(), event.getMouseY()));
+        NeoForge.EVENT_BUS.addListener(ScreenEvent.MouseButtonPressed.Pre.class, event -> {
+            Screen screen = event.getScreen();
+            if (event.getButton() == 0 && SpotifyControllerClient.handleHudControlClick(
+                    event.getMouseX(), event.getMouseY(), screen.width, screen.height)) {
+                event.setCanceled(true);
+            }
+        });
         NeoForge.EVENT_BUS.addListener(
                 GameShuttingDownEvent.class,
                 event -> SpotifyControllerClient.onClientStopping()
@@ -117,6 +130,11 @@ public class SpotifyControllerNeoForgeClient {
                         .then(Commands.literal("repeat")
                                 .executes(context -> SpotifyControllerClient.executeRepeatCommand(
                                         Minecraft.getInstance()
+                                )))
+                        .then(Commands.literal("share")
+                                .executes(context -> SpotifyControllerClient.executeShareCommand(
+                                        Minecraft.getInstance(),
+                                        context.getSource()::sendFailure
                                 )))
                         .then(Commands.literal("hud")
                                 .executes(context -> SpotifyControllerClient.executeHudCommand(

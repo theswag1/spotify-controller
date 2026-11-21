@@ -13,6 +13,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -39,6 +40,10 @@ public class SpotifyApiClient {
     }
 
     public record PlaybackPollResult(PlaybackPollStatus status, Optional<TrackState> track, String message) {
+    }
+
+    /** Upcoming tracks, or an empty list plus a user-facing {@code errorMessage} (null on success). */
+    public record QueueResult(List<TrackState.QueueItem> items, String errorMessage) {
     }
 
     private final SpotifyAuthService authService;
@@ -119,19 +124,46 @@ public class SpotifyApiClient {
                 });
     }
 
+    public CompletableFuture<QueueResult> getQueue() {
+        if (isRateLimited()) {
+            return CompletableFuture.completedFuture(
+                    new QueueResult(List.of(), SpotifyI18n.translate("status.spotify_controller.rate_limited")));
+        }
+        return sendAuthorizedRequest("GET", BASE_URL + "/queue", null, true)
+                .thenApply(response -> {
+                    if (response == null) {
+                        return new QueueResult(List.of(), SpotifyI18n.translate("status.spotify_controller.not_connected_action"));
+                    }
+                    int status = response.statusCode();
+                    if (status >= 200 && status < 300) {
+                        return new QueueResult(TrackState.parseQueue(response.body()), null);
+                    }
+                    return new QueueResult(List.of(), formatErrorMessage(status, response));
+                })
+                .exceptionally(ex -> new QueueResult(List.of(),
+                        SpotifyI18n.translate("status.spotify_controller.request_failed", rootMessage(ex))));
+    }
+
+    // Fast repeated clicks can reach Spotify after the player already changed state; a "pause" while paused
+    // (or "play" while playing) is then rejected with 403 even though the user got what they asked for.
     public CompletableFuture<ApiResult> play() {
-        return sendControlRequest("PUT", BASE_URL + "/play", "{}", SpotifyI18n.translate("status.spotify_controller.resumed"));
+        return sendControlRequest("PUT", BASE_URL + "/play", "{}", SpotifyI18n.translate("status.spotify_controller.resumed"), true);
     }
 
     public CompletableFuture<ApiResult> pause() {
-        return sendControlRequest("PUT", BASE_URL + "/pause", "", SpotifyI18n.translate("status.spotify_controller.paused_action"));
+        return sendControlRequest("PUT", BASE_URL + "/pause", "", SpotifyI18n.translate("status.spotify_controller.paused_action"), true);
     }
 
-    public CompletableFuture<ApiResult> togglePlayPause(TrackState current) {
-        if (current != null && current.isPlaying()) {
-            return pause();
+    /**
+     * Whether a 403 body means the player is already in the requested play/pause state
+     * (reason ALREADY_PAUSED / ALREADY_PLAYING, or the generic "Restriction violated" Spotify returns for it).
+     */
+    public static boolean isRedundantPlaybackError(String body) {
+        String reason = extractSpotifyErrorReason(body);
+        if ("ALREADY_PAUSED".equalsIgnoreCase(reason) || "ALREADY_PLAYING".equalsIgnoreCase(reason)) {
+            return true;
         }
-        return play();
+        return extractSpotifyErrorMessage(body).toLowerCase().contains("restriction violated");
     }
 
     public CompletableFuture<ApiResult> nextTrack() {
@@ -244,6 +276,16 @@ public class SpotifyApiClient {
             String jsonBody,
             String successMessage
     ) {
+        return sendControlRequest(method, url, jsonBody, successMessage, false);
+    }
+
+    private CompletableFuture<ApiResult> sendControlRequest(
+            String method,
+            String url,
+            String jsonBody,
+            String successMessage,
+            boolean redundantPlaybackIsSuccess
+    ) {
         if (isRateLimited()) {
             long waitSec = Math.max(1L, (rateLimitedUntilMillis - System.currentTimeMillis()) / 1000L);
             return CompletableFuture.completedFuture(
@@ -258,6 +300,9 @@ public class SpotifyApiClient {
                     }
                     int status = response.statusCode();
                     if (status >= 200 && status < 300) {
+                        return new ApiResult(true, successMessage);
+                    }
+                    if (status == 403 && redundantPlaybackIsSuccess && isRedundantPlaybackError(response.body())) {
                         return new ApiResult(true, successMessage);
                     }
                     return new ApiResult(false, formatErrorMessage(status, response));

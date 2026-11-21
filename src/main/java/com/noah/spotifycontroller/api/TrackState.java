@@ -25,8 +25,64 @@ public record TrackState(
         int volumePercent,
         boolean shuffleState,
         String repeatState,
-        long fetchedAtMillis
+        long fetchedAtMillis,
+        String spotifyUrl
 ) {
+    /** Minecraft's chat message length limit; longer messages are rejected by the server. */
+    public static final int MAX_CHAT_LENGTH = 256;
+    private static final String SPOTIFY_WEB_PREFIX = "https://open.spotify.com/";
+    private static final int MAX_QUEUE_ITEMS = 10;
+
+    /** One upcoming entry from {@code GET /v1/me/player/queue}. */
+    public record QueueItem(String name, String artist) {
+    }
+
+    /**
+     * Fits {@code text + " " + url} into one chat message: the URL is kept whole, the text is trimmed,
+     * and characters Minecraft servers reject (control chars, the section sign) are removed.
+     */
+    public static String fitChatMessage(String text, String url) {
+        StringBuilder clean = new StringBuilder();
+        for (char c : (text == null ? "" : text).toCharArray()) {
+            if (c >= 32 && c != 127 && c != '§') {
+                clean.append(c);
+            }
+        }
+        String suffix = (url == null || url.isEmpty()) ? "" : " " + url;
+        int room = MAX_CHAT_LENGTH - suffix.length();
+        String body = clean.toString();
+        if (body.length() > room) {
+            body = body.substring(0, Math.max(0, room - 1)) + "…";
+        }
+        return body + suffix;
+    }
+
+    /**
+     * Parses {@code GET /v1/me/player/queue} into at most 10 upcoming entries (empty on bad input).
+     */
+    public static List<QueueItem> parseQueue(String json) {
+        List<QueueItem> items = new ArrayList<>();
+        try {
+            JsonElement root = JsonParser.parseString(json == null ? "" : json);
+            if (!root.isJsonObject() || !root.getAsJsonObject().has("queue")
+                    || !root.getAsJsonObject().get("queue").isJsonArray()) {
+                return items;
+            }
+            for (JsonElement element : root.getAsJsonObject().getAsJsonArray("queue")) {
+                if (items.size() >= MAX_QUEUE_ITEMS) {
+                    break;
+                }
+                if (element.isJsonObject()) {
+                    JsonObject item = element.getAsJsonObject();
+                    items.add(new QueueItem(getStringOrDefault(item, "name", "Unknown Track"), extractArtistName(item)));
+                }
+            }
+        } catch (JsonSyntaxException | IllegalStateException | UnsupportedOperationException e) {
+            items.clear();
+        }
+        return items;
+    }
+
     /**
      * Estimates current track playback position by advancing {@link #progressMs}
      * with elapsed wall-clock time while playing.
@@ -119,11 +175,23 @@ public record TrackState(
                     volumePercent,
                     shuffleState,
                     repeatState,
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    extractSpotifyUrl(item)
             ));
         } catch (JsonSyntaxException | IllegalStateException | UnsupportedOperationException e) {
             return Optional.empty();
         }
+    }
+
+    /** Only links on open.spotify.com are shared, so a malformed response can't put another URL in chat. */
+    private static String extractSpotifyUrl(JsonObject item) {
+        if (item.has("external_urls") && item.get("external_urls").isJsonObject()) {
+            String url = getStringOrDefault(item.getAsJsonObject("external_urls"), "spotify", "");
+            if (url.startsWith(SPOTIFY_WEB_PREFIX) && url.indexOf(' ') < 0) {
+                return url;
+            }
+        }
+        return "";
     }
 
     private static String extractArtistName(JsonObject item) {

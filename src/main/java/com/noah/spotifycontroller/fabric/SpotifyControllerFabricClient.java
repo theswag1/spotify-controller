@@ -1,5 +1,6 @@
 package com.noah.spotifycontroller.fabric;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.noah.spotifycontroller.SpotifyControllerClient;
@@ -10,6 +11,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 
@@ -26,6 +29,15 @@ public class SpotifyControllerFabricClient implements ClientModInitializer {
                 Identifier.fromNamespaceAndPath(SpotifyControllerClient.MOD_ID, "now_playing_hud"),
                 SpotifyControllerClient.getHudOverlay()::extractRenderState
         );
+
+        // HUD hover controls on any in-world screen that frees the cursor (chat, inventory...).
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, delta) ->
+                    SpotifyControllerClient.getHudOverlay().renderHoverControls(graphics, mouseX, mouseY));
+            ScreenMouseEvents.allowMouseClick(screen).register((s, event) ->
+                    event.button() != InputConstants.MOUSE_BUTTON_LEFT
+                            || !SpotifyControllerClient.handleHudControlClick(event.x(), event.y(), s.width, s.height));
+        });
 
         SpotifyControllerClient.registerKeyMappings(
                 SpotifyControllerClient.createKeyCategory(),
@@ -92,6 +104,11 @@ public class SpotifyControllerFabricClient implements ClientModInitializer {
                         .then(ClientCommands.literal("repeat")
                                 .executes(context -> SpotifyControllerClient.executeRepeatCommand(
                                         context.getSource().getClient()
+                                )))
+                        .then(ClientCommands.literal("share")
+                                .executes(context -> SpotifyControllerClient.executeShareCommand(
+                                        context.getSource().getClient(),
+                                        context.getSource()::sendError
                                 )))
                         .then(ClientCommands.literal("hud")
                                 .executes(context -> SpotifyControllerClient.executeHudCommand(

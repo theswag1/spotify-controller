@@ -23,6 +23,8 @@ public class SpotifyPoller {
     public static final int IDLE_NO_PLAYBACK_POLL_SECONDS = 8;
     public static final int IDLE_MENU_POLL_SECONDS = 10;
     public static final int IDLE_UNFOCUSED_POLL_SECONDS = 10;
+    /** Spotify needs a moment to switch tracks; polling exactly at the end often still returns the old one. */
+    private static final long END_OF_TRACK_GRACE_MS = 750L;
 
     private final SpotifyConfig config;
     private final SpotifyApiClient apiClient;
@@ -30,6 +32,7 @@ public class SpotifyPoller {
     private final AtomicBoolean pollInFlight = new AtomicBoolean(false);
     private final AtomicInteger secondsSinceLastPoll = new AtomicInteger(Integer.MAX_VALUE / 2);
     private volatile boolean started = false;
+    private volatile long endOfTrackRefreshDueAtMs = 0L;
 
     private volatile TrackState currentTrack;
     private volatile String lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.not_connected");
@@ -99,6 +102,32 @@ public class SpotifyPoller {
             // Headless unit test environments may not initialize Minecraft client state
         }
         return computeEffectivePollIntervalSeconds(configured, currentTrack, inWorld, windowFocused, spotifyUiOpen);
+    }
+
+    /**
+     * Delay in ms for an extra poll just after the playing track should end, or -1 when the regular
+     * interval poll will come first. Without it the HUD can sit on a finished song for a whole interval.
+     */
+    public static long computeEndOfTrackRefreshDelayMs(TrackState track, int intervalSeconds) {
+        if (track == null || !track.isPlaying() || track.durationMs() <= 0) {
+            return -1L;
+        }
+        long remainingMs = track.durationMs() - track.progressMs();
+        if (remainingMs < 0 || remainingMs > intervalSeconds * 1000L) {
+            return -1L;
+        }
+        return remainingMs + END_OF_TRACK_GRACE_MS;
+    }
+
+    private void scheduleEndOfTrackRefresh(TrackState track) {
+        long delayMs = computeEndOfTrackRefreshDelayMs(track, getEffectivePollIntervalSeconds());
+        long now = System.currentTimeMillis();
+        // One pending end-of-track refresh at a time, so polls near the end don't stack extra requests.
+        if (delayMs < 0 || now < endOfTrackRefreshDueAtMs) {
+            return;
+        }
+        endOfTrackRefreshDueAtMs = now + delayMs;
+        triggerImmediateRefresh(delayMs);
     }
 
     private void tickPoller() {
@@ -183,6 +212,7 @@ public class SpotifyPoller {
                     case ACTIVE -> {
                         currentTrack = result.track().orElse(null);
                         lastStatusMessage = result.message();
+                        scheduleEndOfTrackRefresh(currentTrack);
                     }
                     case NOT_CONFIGURED, NO_PLAYBACK, UNAUTHENTICATED -> {
                         currentTrack = null;

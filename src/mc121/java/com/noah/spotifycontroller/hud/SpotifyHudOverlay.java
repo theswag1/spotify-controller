@@ -1,5 +1,6 @@
 package com.noah.spotifycontroller.hud;
 
+import com.noah.spotifycontroller.SpotifyControllerClient;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.config.SpotifyConfig;
@@ -22,6 +23,13 @@ public class SpotifyHudOverlay {
     public static final int CARD_HEIGHT = 46;
     public static final int COMPACT_WIDTH = 190;
     public static final int COMPACT_HEIGHT = 10;
+    public static final int CONTROL_SIZE = 16;
+    private static final int CONTROL_GAP = 2;
+    private static final int CONTROL_STRIP_WIDTH = 3 * CONTROL_SIZE + 2 * CONTROL_GAP;
+    private static final long OPTIMISTIC_PLAYING_MS = 2500L;
+
+    private volatile boolean optimisticPlaying;
+    private volatile long optimisticPlayingUntilMs = 0L;
     private static final int ART_SIZE = 36;
     private static final long MARQUEE_PAUSE_MS = 1500L;
     private static final double MARQUEE_PIXELS_PER_SECOND = 24.0;
@@ -121,6 +129,100 @@ public class SpotifyHudOverlay {
         }
 
         guiGraphics.pose().popPose();
+    }
+
+    /**
+     * Draws prev / play-pause / next buttons by the HUD widget while the mouse hovers it on an
+     * in-world screen that frees the cursor (chat, inventory...). Called from the loaders' screen render events.
+     */
+    public void renderHoverControls(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        int[] bounds = hoverableBounds(guiGraphics.guiWidth(), guiGraphics.guiHeight());
+        if (bounds == null) {
+            return;
+        }
+        int stripY = controlStripY(bounds[1], bounds[3], guiGraphics.guiHeight());
+        if (!isInHoverZone(mouseX, mouseY, bounds[0], bounds[1], bounds[2], bounds[3], stripY)) {
+            return;
+        }
+        Font font = Minecraft.getInstance().font;
+        int accent = config.getAccentColorArgb();
+        int hovered = hoverControlAt(mouseX, mouseY, bounds[0], stripY);
+        String[] icons = {"⏮", isEffectivelyPlaying() ? "⏸" : "▶", "⏭"};
+        for (int i = 0; i < icons.length; i++) {
+            int cx = bounds[0] + i * (CONTROL_SIZE + CONTROL_GAP);
+            guiGraphics.fill(cx, stripY, cx + CONTROL_SIZE, stripY + CONTROL_SIZE, 0xE0121212);
+            guiGraphics.renderOutline(cx, stripY, CONTROL_SIZE, CONTROL_SIZE, i == hovered ? accent : 0xFF333333);
+            guiGraphics.drawCenteredString(font, icons[i], cx + CONTROL_SIZE / 2, stripY + 4, i == hovered ? accent : 0xFFFFFFFF);
+        }
+    }
+
+    /** Playing state including a just-clicked toggle, so the icon flips before the next poll confirms it. */
+    public boolean isEffectivelyPlaying() {
+        if (System.currentTimeMillis() < optimisticPlayingUntilMs) {
+            return optimisticPlaying;
+        }
+        TrackState track = poller.getCurrentTrack();
+        return track != null && track.isPlaying();
+    }
+
+    /** Records a play/pause click; returns whether it should resume (true) or pause (false). */
+    public boolean togglePlayingOptimistically() {
+        boolean resume = !isEffectivelyPlaying();
+        optimisticPlaying = resume;
+        optimisticPlayingUntilMs = System.currentTimeMillis() + OPTIMISTIC_PLAYING_MS;
+        return resume;
+    }
+
+    /**
+     * Returns the hover control (0 prev, 1 play/pause, 2 next) under the mouse, or -1.
+     */
+    public int controlAt(double mouseX, double mouseY, int screenWidth, int screenHeight) {
+        int[] bounds = hoverableBounds(screenWidth, screenHeight);
+        return bounds == null ? -1 : hoverControlAt(mouseX, mouseY, bounds[0], controlStripY(bounds[1], bounds[3], screenHeight));
+    }
+
+    /** On-screen widget bounds {x, y, width, height}, or null when hover controls should not show. */
+    private int[] hoverableBounds(int screenWidth, int screenHeight) {
+        Minecraft client = Minecraft.getInstance();
+        if (!config.hudEnabled
+                || client.player == null
+                || poller.getCurrentTrack() == null
+                || client.options.hideGui
+                || SpotifyControllerClient.isSpotifyUiOpen(client)) {
+            return null;
+        }
+        return new int[]{
+                clampX(config.hudX, screenWidth, config.hudScale, config.hudCompact),
+                clampY(config.hudY, screenHeight, config.hudScale, config.hudCompact),
+                getScaledWidth(config.hudScale, config.hudCompact),
+                getScaledHeight(config.hudScale, config.hudCompact)
+        };
+    }
+
+    /** The control strip goes below the widget, or above it when the widget sits at the bottom of the screen. */
+    public static int controlStripY(int y, int height, int screenHeight) {
+        int below = y + height + CONTROL_GAP;
+        return below + CONTROL_SIZE <= screenHeight ? below : y - CONTROL_GAP - CONTROL_SIZE;
+    }
+
+    /** The widget plus the control strip, so moving the mouse onto the buttons keeps them open. */
+    public static boolean isInHoverZone(double mouseX, double mouseY, int x, int y, int width, int height, int stripY) {
+        int top = Math.min(y, stripY);
+        int bottom = Math.max(y + height, stripY + CONTROL_SIZE);
+        return mouseX >= x && mouseX < x + Math.max(width, CONTROL_STRIP_WIDTH) && mouseY >= top && mouseY < bottom;
+    }
+
+    public static int hoverControlAt(double mouseX, double mouseY, int x, int stripY) {
+        if (mouseY < stripY || mouseY >= stripY + CONTROL_SIZE) {
+            return -1;
+        }
+        for (int i = 0; i < 3; i++) {
+            int cx = x + i * (CONTROL_SIZE + CONTROL_GAP);
+            if (mouseX >= cx && mouseX < cx + CONTROL_SIZE) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public static int getScaledWidth(float scale, boolean compact) {

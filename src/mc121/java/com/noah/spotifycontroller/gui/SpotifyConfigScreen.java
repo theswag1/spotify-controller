@@ -55,6 +55,7 @@ public class SpotifyConfigScreen extends Screen {
     private boolean authInProgress = false;
     private CompletableFuture<Boolean> currentAuthFuture;
     private boolean updatingColorBoxProgrammatically = false;
+    private boolean editingHud = false;
     private boolean draggingHud = false;
     private boolean dirtyConfig = false;
     private int dragOffsetX = 0;
@@ -79,15 +80,38 @@ public class SpotifyConfigScreen extends Screen {
     protected void init() {
         int left = (this.width - CONTENT_WIDTH) / 2;
         int top = computeTop();
+        int right = left + HALF_BUTTON_WIDTH + BUTTON_GAP;
+
+        if (editingHud) {
+            // Edit mode: only the draggable preview plus these two buttons. Form widgets keep their values in fields.
+            int buttonsY = this.height - 28;
+            addRenderableWidget(
+                    Button.builder(
+                            Component.translatable("screen.spotify_controller.config.reset_hud"),
+                            button -> {
+                                config.resetHudPosition();
+                                this.draggingHud = false;
+                            }
+                    ).bounds(this.width / 2 - HALF_BUTTON_WIDTH - BUTTON_GAP / 2, buttonsY, HALF_BUTTON_WIDTH, 20).build()
+            );
+            addRenderableWidget(
+                    Button.builder(
+                            Component.translatable("screen.spotify_controller.config.done_moving"),
+                            button -> setEditingHud(false)
+                    ).bounds(this.width / 2 + BUTTON_GAP / 2, buttonsY, HALF_BUTTON_WIDTH, 20).build()
+            );
+            return;
+        }
 
         String previousInput = clientIdBox != null
                 ? clientIdBox.getValue()
                 : (config.clientId != null ? config.clientId : "");
 
+        // Account section
         clientIdBox = new EditBox(
                 this.font,
                 left,
-                top + 24,
+                top + 12,
                 CONTENT_WIDTH,
                 20,
                 Component.translatable("screen.spotify_controller.config.client_id")
@@ -102,16 +126,31 @@ public class SpotifyConfigScreen extends Screen {
                 Button.builder(
                         Component.translatable("screen.spotify_controller.config.copy_redirect"),
                         button -> copyRedirectUri()
-                ).bounds(left, top + 72, HALF_BUTTON_WIDTH, 20).build()
+                ).bounds(left, top + 48, HALF_BUTTON_WIDTH, 20).build()
         );
 
         connectButton = addRenderableWidget(
                 Button.builder(
                         Component.translatable("screen.spotify_controller.config.connect"),
                         button -> saveAndConnect()
-                ).bounds(left + HALF_BUTTON_WIDTH + BUTTON_GAP, top + 72, HALF_BUTTON_WIDTH, 20).build()
+                ).bounds(right, top + 48, HALF_BUTTON_WIDTH, 20).build()
         );
 
+        disconnectButton = addRenderableWidget(
+                Button.builder(
+                        Component.translatable("screen.spotify_controller.config.disconnect"),
+                        button -> disconnect()
+                ).bounds(left, top + 72, HALF_BUTTON_WIDTH, 20).build()
+        );
+
+        addRenderableWidget(
+                Button.builder(
+                        Component.translatable("screen.spotify_controller.config.setup_guide"),
+                        button -> openSetupGuide()
+                ).bounds(right, top + 72, HALF_BUTTON_WIDTH, 20).build()
+        );
+
+        // HUD & appearance section
         addRenderableWidget(
                 Button.builder(
                         getHudToggleLabel(),
@@ -119,21 +158,21 @@ public class SpotifyConfigScreen extends Screen {
                             cycleHudMode();
                             button.setMessage(getHudToggleLabel());
                         }
-                ).bounds(left, top + 98, HALF_BUTTON_WIDTH, 20).build()
+                ).bounds(left, top + 112, HALF_BUTTON_WIDTH, 20).build()
         );
 
-        disconnectButton = addRenderableWidget(
+        addRenderableWidget(
                 Button.builder(
-                        Component.translatable("screen.spotify_controller.config.disconnect"),
-                        button -> disconnect()
-                ).bounds(left + HALF_BUTTON_WIDTH + BUTTON_GAP, top + 98, HALF_BUTTON_WIDTH, 20).build()
+                        Component.translatable("screen.spotify_controller.config.move_hud"),
+                        button -> setEditingHud(true)
+                ).bounds(right, top + 112, HALF_BUTTON_WIDTH, 20).build()
         );
 
         colorPresetButton = addRenderableWidget(
                 Button.builder(
                         getColorPresetButtonLabel(),
                         button -> cycleAccentColorPreset()
-                ).bounds(left, top + 124, HALF_BUTTON_WIDTH, 20).build()
+                ).bounds(left, top + 136, HALF_BUTTON_WIDTH, 20).build()
         );
 
         String previousHex = accentColorBox != null
@@ -141,8 +180,8 @@ public class SpotifyConfigScreen extends Screen {
                 : SpotifyConfig.normalizeHexColor(config.accentColorHex);
         accentColorBox = new EditBox(
                 this.font,
-                left + HALF_BUTTON_WIDTH + BUTTON_GAP,
-                top + 124,
+                right,
+                top + 136,
                 HALF_BUTTON_WIDTH - 24,
                 20,
                 Component.translatable("screen.spotify_controller.config.accent_color_box")
@@ -165,75 +204,70 @@ public class SpotifyConfigScreen extends Screen {
 
         addRenderableWidget(
                 Button.builder(
-                        Component.translatable("screen.spotify_controller.config.reset_hud"),
-                        button -> {
-                            config.resetHudPosition();
-                            this.draggingHud = false;
-                            this.statusOverride = Component.translatable(
-                                    "screen.spotify_controller.config.status.reset_hud",
-                                    config.hudX,
-                                    config.hudY
-                            );
-                        }
-                ).bounds(left, top + 150, 100, 20).build()
-        );
-
-        addRenderableWidget(
-                Button.builder(
-                        Component.translatable("screen.spotify_controller.config.setup_guide"),
-                        button -> openSetupGuide()
-                ).bounds(left + 110, top + 150, 100, 20).build()
-        );
-
-        addRenderableWidget(
-                Button.builder(
                         Component.translatable("screen.spotify_controller.config.done"),
                         button -> onClose()
-                ).bounds(left + 220, top + 150, 100, 20).build()
+                ).bounds(left, top + 230, CONTENT_WIDTH, 20).build()
         );
 
         updateButtonStates();
+    }
+
+    private void setEditingHud(boolean editing) {
+        if (!editing) {
+            flushPendingChanges();
+        }
+        this.editingHud = editing;
+        this.draggingHud = false;
+        rebuildWidgets();
+    }
+
+    private void drawSectionHeader(GuiGraphics guiGraphics, Component label, int left, int y) {
+        guiGraphics.drawString(this.font, label, left, y, config.getAccentColorArgb());
+        guiGraphics.fill(left, y + 10, left + CONTENT_WIDTH, y + 11, 0x40FFFFFF);
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
+        TrackState track = poller.getCurrentTrack();
+        if (editingHud) {
+            guiGraphics.drawCenteredString(this.font, Component.translatable("screen.spotify_controller.config.move_hint"),
+                    this.width / 2, this.height - 42, 0xFFE0E0E0);
+            renderDraggableHudPreview(guiGraphics, mouseX, mouseY, track);
+            return;
+        }
+
         int left = (this.width - CONTENT_WIDTH) / 2;
         int top = computeTop();
 
         guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, Math.max(4, top - 14), 0xFFFFFFFF);
-        guiGraphics.drawString(
-                this.font,
-                Component.translatable("screen.spotify_controller.config.client_id"),
-                left,
-                top + 12,
-                0xFFCCCCCC
-        );
+        drawSectionHeader(guiGraphics, Component.translatable("screen.spotify_controller.config.section.account"), left, top);
         guiGraphics.drawString(
                 this.font,
                 Component.translatable("screen.spotify_controller.config.redirect_url", config.getRedirectUri()),
                 left,
-                top + 52,
+                top + 36,
                 0xFFA0A0A0
         );
+        drawSectionHeader(guiGraphics, Component.translatable("screen.spotify_controller.config.section.hud"), left, top + 98);
 
         int swatchX = left + CONTENT_WIDTH - 20;
-        int swatchY = top + 124;
+        int swatchY = top + 136;
         guiGraphics.fill(swatchX, swatchY, swatchX + 20, swatchY + 20, config.getAccentColorArgb());
         guiGraphics.renderOutline(swatchX, swatchY, 20, 20, 0xFFFFFFFF);
 
-        int cardTop = top + 176;
-        int cardBottom = Math.min(this.height - 4, cardTop + 78);
-        guiGraphics.fill(left, cardTop, left + CONTENT_WIDTH, cardBottom, 0xAA181818);
-        guiGraphics.renderOutline(left, cardTop, CONTENT_WIDTH, cardBottom - cardTop, 0xFF333333);
+        int cardTop = top + 164;
+        int cardHeight = 58;
+        guiGraphics.fill(left, cardTop, left + CONTENT_WIDTH, cardTop + cardHeight, 0xAA181818);
+        guiGraphics.renderOutline(left, cardTop, CONTENT_WIDTH, cardHeight, 0xFF333333);
 
         boolean connected = config.hasValidAccessToken() || config.hasRefreshToken();
         Component connectionLabel = Component.translatable(connected
                 ? "screen.spotify_controller.config.account_connected"
                 : "screen.spotify_controller.config.account_disconnected");
         int connectionColor = connected ? 0xFF1DB954 : 0xFFFFB74D;
-        guiGraphics.drawString(this.font, connectionLabel, left + 8, cardTop + 8, connectionColor);
+        guiGraphics.drawString(this.font, connectionLabel, left + 8, cardTop + 6, connectionColor);
 
         Component displayStatus = statusOverride != null
                 ? statusOverride
@@ -242,16 +276,18 @@ public class SpotifyConfigScreen extends Screen {
                 Component.translatable("screen.spotify_controller.config.status_label", displayStatus),
                 CONTENT_WIDTH - 16
         );
-        int y = cardTop + 22;
+        int y = cardTop + 18;
         int maxLines = Math.min(2, statusLines.size());
         for (int i = 0; i < maxLines; i++) {
             guiGraphics.drawString(this.font, statusLines.get(i), left + 8, y, 0xFFE0E0E0);
             y += this.font.lineHeight + 2;
         }
 
-        TrackState track = poller.getCurrentTrack();
-        int trackY = cardTop + 50;
+        int trackY = cardTop + 42;
         if (track != null) {
+            String timeText = TrackState.formatDuration(track.getInterpolatedProgressMs())
+                    + " / " + TrackState.formatDuration(track.durationMs());
+            int timeWidth = this.font.width(timeText);
             String trackSummary = SpotifyI18n.translate(
                     track.isPlaying()
                             ? "screen.spotify_controller.config.now_playing"
@@ -259,12 +295,9 @@ public class SpotifyConfigScreen extends Screen {
                     track.trackName(),
                     track.artistName()
             );
-            String truncatedTrack = this.font.plainSubstrByWidth(trackSummary, CONTENT_WIDTH - 16);
+            String truncatedTrack = this.font.plainSubstrByWidth(trackSummary, CONTENT_WIDTH - 24 - timeWidth);
             guiGraphics.drawString(this.font, truncatedTrack, left + 8, trackY, config.getAccentColorArgb());
-
-            String timeText = TrackState.formatDuration(track.getInterpolatedProgressMs())
-                    + " / " + TrackState.formatDuration(track.durationMs());
-            guiGraphics.drawString(this.font, timeText, left + 8, trackY + 12, 0xFFB0B0B0);
+            guiGraphics.drawString(this.font, timeText, left + CONTENT_WIDTH - 8 - timeWidth, trackY, 0xFFB0B0B0);
         } else {
             guiGraphics.drawString(
                     this.font,
@@ -274,8 +307,6 @@ public class SpotifyConfigScreen extends Screen {
                     0xFF888888
             );
         }
-
-        renderDraggableHudPreview(guiGraphics, mouseX, mouseY, track);
     }
 
     @Override
@@ -283,7 +314,7 @@ public class SpotifyConfigScreen extends Screen {
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        if (button == InputConstants.MOUSE_BUTTON_LEFT) {
+        if (editingHud && button == InputConstants.MOUSE_BUTTON_LEFT) {
             float scale = SpotifyConfig.clampHudScale(config.hudScale);
             int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, scale, config.hudCompact);
             int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, scale, config.hudCompact);
@@ -327,7 +358,7 @@ public class SpotifyConfigScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (scrollY != 0.0) {
+        if (editingHud && scrollY != 0.0) {
             float currentScale = SpotifyConfig.clampHudScale(config.hudScale);
             int hudX = SpotifyHudOverlay.clampX(config.hudX, this.width, currentScale, config.hudCompact);
             int hudY = SpotifyHudOverlay.clampY(config.hudY, this.height, currentScale, config.hudCompact);
@@ -348,6 +379,11 @@ public class SpotifyConfigScreen extends Screen {
 
     @Override
     public void onClose() {
+        if (editingHud) {
+            // Esc leaves HUD edit mode first; a second Esc closes the screen.
+            setEditingHud(false);
+            return;
+        }
         flushPendingChanges();
         Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
         client.setScreen(this.parent);
@@ -375,7 +411,7 @@ public class SpotifyConfigScreen extends Screen {
     }
 
     private int computeTop() {
-        return Math.max(16, (this.height - 254) / 2);
+        return Math.max(16, (this.height - 250) / 2);
     }
 
     private void renderDraggableHudPreview(
@@ -402,7 +438,8 @@ public class SpotifyConfigScreen extends Screen {
                 100,
                 false,
                 "off",
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                ""
         );
 
         if (hudOverlay != null) {

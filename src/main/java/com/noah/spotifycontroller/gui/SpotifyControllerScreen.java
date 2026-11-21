@@ -19,6 +19,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -34,6 +35,10 @@ public class SpotifyControllerScreen extends Screen {
     private static final int ALBUM_ART_SIZE = 64;
     private static final long OPTIMISTIC_STATE_MS = 2500L;
     private static final long ERROR_DISPLAY_MS = 5000L;
+    private static final int QUEUE_ICON_SIZE = 14;
+    private static final int QUEUE_POPOVER_WIDTH = 220;
+    private static final int QUEUE_ROW_HEIGHT = 12;
+    private static final long QUEUE_REFRESH_MS = 10_000L;
 
     private final Screen parent;
     private final SpotifyConfig config;
@@ -59,6 +64,12 @@ public class SpotifyControllerScreen extends Screen {
 
     private Component errorMessage;
     private long errorUntilMs = 0L;
+
+    private boolean queueOpen = false;
+    private boolean queueLoading = false;
+    private long queueFetchedAtMs = 0L;
+    private List<TrackState.QueueItem> queueItems;
+    private String queueError;
 
     public SpotifyControllerScreen(
             Screen parent,
@@ -163,10 +174,85 @@ public class SpotifyControllerScreen extends Screen {
                 y += this.font.lineHeight + 1;
             }
         }
+
+        renderQueuePopover(guiGraphics, mouseX, mouseY, left, top);
+    }
+
+    /**
+     * Queue icon at the panel's top-right; hovering it (or the open list) shows the next tracks.
+     * Spotify's API has no endpoint to reorder or remove queue items, so this is read-only.
+     */
+    private void renderQueuePopover(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY, int left, int top) {
+        int iconX = queueIconX(left);
+        int iconY = top + 6;
+        boolean overIcon = isPointInRect(mouseX, mouseY, iconX, iconY, QUEUE_ICON_SIZE, QUEUE_ICON_SIZE);
+        queueOpen = overIcon || (queueOpen && isOverQueuePopover(mouseX, mouseY, left, top));
+
+        int accent = config.getAccentColorArgb();
+        guiGraphics.fill(iconX, iconY, iconX + QUEUE_ICON_SIZE, iconY + QUEUE_ICON_SIZE, queueOpen ? 0xFF2A2A2A : 0xFF1A1A1A);
+        guiGraphics.outline(iconX, iconY, QUEUE_ICON_SIZE, QUEUE_ICON_SIZE, queueOpen ? accent : 0xFF3A3A3A);
+        guiGraphics.centeredText(this.font, "☰", iconX + QUEUE_ICON_SIZE / 2, iconY + 3, queueOpen ? accent : 0xFFFFFFFF);
+        if (!queueOpen) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (!queueLoading && now - queueFetchedAtMs > QUEUE_REFRESH_MS) {
+            queueLoading = true;
+            Minecraft client = this.minecraft != null ? this.minecraft : Minecraft.getInstance();
+            apiClient.getQueue().thenAccept(result -> client.execute(() -> {
+                queueItems = result.items();
+                queueError = result.errorMessage();
+                queueLoading = false;
+                queueFetchedAtMs = System.currentTimeMillis();
+            }));
+        }
+
+        int popX = left + PANEL_WIDTH - QUEUE_POPOVER_WIDTH - 6;
+        int popY = iconY + QUEUE_ICON_SIZE + 2;
+        guiGraphics.fill(popX, popY, popX + QUEUE_POPOVER_WIDTH, popY + queuePopoverHeight(), 0xF0121212);
+        guiGraphics.outline(popX, popY, QUEUE_POPOVER_WIDTH, queuePopoverHeight(), accent);
+        guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.queue.title"), popX + 6, popY + 6, accent);
+
+        int y = popY + 20;
+        int textWidth = QUEUE_POPOVER_WIDTH - 12;
+        if (queueError != null) {
+            guiGraphics.text(this.font, this.font.plainSubstrByWidth(queueError, textWidth), popX + 6, y, 0xFFFF6B6B);
+        } else if (queueItems == null) {
+            guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.queue.loading"), popX + 6, y, 0xFFA0A0A0);
+        } else if (queueItems.isEmpty()) {
+            guiGraphics.text(this.font, Component.translatable("screen.spotify_controller.queue.empty"), popX + 6, y, 0xFFA0A0A0);
+        } else {
+            for (int i = 0; i < queueItems.size(); i++) {
+                TrackState.QueueItem item = queueItems.get(i);
+                String row = (i + 1) + ". " + SpotifyI18n.translate("screen.spotify_controller.queue.row", item.name(), item.artist());
+                guiGraphics.text(this.font, this.font.plainSubstrByWidth(row, textWidth), popX + 6, y, 0xFFE0E0E0);
+                y += QUEUE_ROW_HEIGHT;
+            }
+        }
+    }
+
+    private boolean isOverQueuePopover(double mouseX, double mouseY, int left, int top) {
+        // Includes the 2px gap under the icon so moving down into the list keeps it open.
+        int popX = left + PANEL_WIDTH - QUEUE_POPOVER_WIDTH - 6;
+        int popY = top + 6 + QUEUE_ICON_SIZE;
+        return isPointInRect(mouseX, mouseY, popX, popY, QUEUE_POPOVER_WIDTH, queuePopoverHeight() + 2);
+    }
+
+    private int queuePopoverHeight() {
+        int rows = (queueItems != null && queueError == null && !queueItems.isEmpty()) ? queueItems.size() : 1;
+        return 24 + rows * QUEUE_ROW_HEIGHT;
+    }
+
+    private static int queueIconX(int left) {
+        return left + PANEL_WIDTH - 6 - QUEUE_ICON_SIZE;
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (queueOpen && isOverQueuePopover(event.x(), event.y(), panelLeft(), panelTop())) {
+            return true; // the open list covers the buttons underneath
+        }
         if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             int left = panelLeft();
             int top = panelTop();

@@ -15,9 +15,11 @@ Because everything runs client-side, it works in singleplayer and on any multipl
   - Displays `64x64` album art, marquee scrolling track / artist / album names, and a **clickable seek bar**.
   - Transport controls for **Shuffle**, **Previous**, **Play / Pause**, **Next**, and **Repeat** (`OFF` / `ALL` / `ONE`).
   - **Volume -10% / +10%** buttons plus an interactive **click-and-drag Volume bar**.
+  - Hover the **☰** icon in the top-right corner to see an **Up Next** list of the next 10 tracks in your Spotify queue.
 - **Draggable, Resizable & Customizable HUD Widget**
   - Displays the current track's album art, song title, artist name, elapsed/total time, accent end strip, and smoothly interpolated progress bar.
-  - **Drag-and-drop positioning** inside the Config screen (`O` or `/spotify config`) and **scroll-wheel resizing (`50%`–`200%` in `5%` steps)** while hovering over the HUD preview, plus a **Reset HUD** button.
+  - **Hover controls:** with chat, the inventory or any other in-world screen open, hover the widget to get clickable **Previous / Play-Pause / Next** buttons.
+  - **Move / Resize HUD** in the Config screen (`O` or `/spotify config`) opens an edit mode with **drag-and-drop positioning**, **scroll-wheel resizing (`50%`–`200%` in `5%` steps)** and a **Reset HUD** button.
   - **Customizable accent & playback bar color** via 8 color presets (`Green`, `Cyan`, `Blue`, `Purple`, `Pink`, `Red`, `Orange`, `White`) or a custom `#RRGGBB` hex input with a live color swatch.
   - **Compact mode:** a single `♪ Song — Artist` text line instead of the full card. The Config screen's **HUD Widget** button cycles `ON` (full card) → `COMPACT` → `OFF`.
   - Automatically scrolls long text (marquee), hides with `F1`, and toggles on/off via keybind (`\`), Config screen, or `/spotify hud` (keeping the chosen full/compact style).
@@ -37,15 +39,15 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 - **Minecraft:** `26.3`, `26.2`, `26.1.x` (`26.1`–`26.1.2`), or `1.21` / `1.21.1`
 - **Fabric:**
-  - `spotify-controller-0.7.0-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
-  - `spotify-controller-0.7.0-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
-  - `spotify-controller-0.7.0-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
-  - `spotify-controller-0.7.0-fabric-mc1.21.1.jar` (Fabric Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1`)
+  - `spotify-controller-0.8.0-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
+  - `spotify-controller-0.8.0-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
+  - `spotify-controller-0.8.0-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
+  - `spotify-controller-0.8.0-fabric-mc1.21.1.jar` (Fabric Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1`)
 - **NeoForge:**
-  - `spotify-controller-0.7.0-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
-  - `spotify-controller-0.7.0-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
-  - `spotify-controller-0.7.0-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
-  - `spotify-controller-0.7.0-neoforge-mc1.21.1.jar` (NeoForge `21.0.x` / `21.1.x`)
+  - `spotify-controller-0.8.0-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
+  - `spotify-controller-0.8.0-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
+  - `spotify-controller-0.8.0-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
+  - `spotify-controller-0.8.0-neoforge-mc1.21.1.jar` (NeoForge `21.0.x` / `21.1.x`)
 - **Java:** `25` for `26.x`, or `21+` for `1.21` / `1.21.1`
 - **Spotify Account:**
   - Viewing the currently playing track works on Free and Premium accounts.
@@ -93,6 +95,7 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 | `/spotify volume <0-100>` | Set playback volume percentage |
 | `/spotify shuffle` | Toggle shuffle mode on/off |
 | `/spotify repeat` | Cycle repeat mode (`OFF` -> `ALL` -> `ONE`) |
+| `/spotify share` | Post the current song and its `open.spotify.com` link to chat (the link is clickable on servers that turn chat URLs into links, such as NeoForge) |
 
 ---
 
@@ -117,5 +120,5 @@ Requires **JDK 25** (and **JDK 21** toolchain installed for NeoForge `1.21.1`).
 *(On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.)*
 
 The compiled jars are output to `build/libs/`:
-- `spotify-controller-0.7.0-fabric-mc26.3.jar` / `spotify-controller-0.7.0-fabric-mc26.2.jar` / `spotify-controller-0.7.0-fabric-mc26.1.x.jar` / `spotify-controller-0.7.0-fabric-mc1.21.1.jar` (Fabric)
-- `spotify-controller-0.7.0-neoforge-mc26.3.jar` / `spotify-controller-0.7.0-neoforge-mc26.2.jar` / `spotify-controller-0.7.0-neoforge-mc26.1.x.jar` / `spotify-controller-0.7.0-neoforge-mc1.21.1.jar` (NeoForge)
+- `spotify-controller-0.8.0-fabric-mc26.3.jar` / `spotify-controller-0.8.0-fabric-mc26.2.jar` / `spotify-controller-0.8.0-fabric-mc26.1.x.jar` / `spotify-controller-0.8.0-fabric-mc1.21.1.jar` (Fabric)
+- `spotify-controller-0.8.0-neoforge-mc26.3.jar` / `spotify-controller-0.8.0-neoforge-mc26.2.jar` / `spotify-controller-0.8.0-neoforge-mc26.1.x.jar` / `spotify-controller-0.8.0-neoforge-mc1.21.1.jar` (NeoForge)

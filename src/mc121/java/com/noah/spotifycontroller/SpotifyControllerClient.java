@@ -162,7 +162,8 @@ public class SpotifyControllerClient {
         }
         if (playPauseKey != null) {
             while (playPauseKey.consumeClick()) {
-                runKeybindPlaybackAction(client, apiClient.togglePlayPause(poller.getCurrentTrack()));
+                // Shares the HUD's optimistic state so repeated presses alternate instead of re-sending "pause".
+                runKeybindPlaybackAction(client, hudOverlay.togglePlayingOptimistically() ? apiClient.play() : apiClient.pause());
             }
         }
         if (prevTrackKey != null) {
@@ -373,6 +374,46 @@ public class SpotifyControllerClient {
         TrackState track = poller.getCurrentTrack();
         String nextRepeat = SpotifyApiClient.nextRepeatState(track != null ? track.repeatState() : "off");
         return runPlaybackCommand(client, apiClient.setRepeatMode(nextRepeat));
+    }
+
+    /**
+     * Runs the HUD hover control under the mouse (prev / play-pause / next) and returns whether the click was used.
+     */
+    public static boolean handleHudControlClick(double mouseX, double mouseY, int screenWidth, int screenHeight) {
+        int control = hudOverlay == null ? -1 : hudOverlay.controlAt(mouseX, mouseY, screenWidth, screenHeight);
+        if (control < 0) {
+            return false;
+        }
+        Minecraft client = Minecraft.getInstance();
+        runKeybindPlaybackAction(client, switch (control) {
+            case 0 -> apiClient.previousTrack();
+            case 1 -> hudOverlay.togglePlayingOptimistically() ? apiClient.play() : apiClient.pause();
+            default -> apiClient.nextTrack();
+        });
+        return true;
+    }
+
+    /**
+     * Posts "♪ Now playing: Song — Artist <link>" to server chat. Player chat is plain text, so the link is only
+     * clickable where the server turns URLs into links (NeoForge does; vanilla and Fabric servers don't).
+     */
+    public static int executeShareCommand(Minecraft client, Consumer<Component> sendError) {
+        TrackState track = poller.getCurrentTrack();
+        if (track == null || client.player == null) {
+            sendError.accept(Component.translatable("chat.spotify_controller.share_no_track"));
+            return 0;
+        }
+        String message = TrackState.fitChatMessage(
+                SpotifyI18n.translate("chat.spotify_controller.share_message", track.trackName(), track.artistName()),
+                track.spotifyUrl()
+        );
+        // Defer so the chat packet is sent after the current command finishes executing.
+        client.execute(() -> {
+            if (client.player != null) {
+                client.player.connection.sendChat(message);
+            }
+        });
+        return 1;
     }
 
     public static int executeHudCommand(Consumer<Component> sendFeedback) {
