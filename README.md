@@ -4,6 +4,8 @@ A client-side Fabric and NeoForge mod that connects to the Spotify Web API via O
 
 Because everything runs client-side, it works in singleplayer and on any multiplayer server without requiring server-side installation.
 
+**[⬇ Download the latest release](https://github.com/theswag1/spotify-controller/releases/latest)**, then pick the jar for your mod loader and Minecraft version (see [Requirements](#requirements)).
+
 <p align="center">
   <img src="docs/screenshots/controller.png" alt="In-game Spotify Controller screen with album art, seek bar, transport controls and volume bar" width="560">
   <br>
@@ -47,17 +49,15 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 
 ## Requirements
 
-- **Minecraft:** `26.3`, `26.2`, `26.1.x` (`26.1`–`26.1.2`), or `1.21` / `1.21.1`
-- **Fabric:**
-  - `spotify-controller-0.8.0-fabric-mc26.3.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.166.2+26.3`)
-  - `spotify-controller-0.8.0-fabric-mc26.2.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.161.0+26.2`)
-  - `spotify-controller-0.8.0-fabric-mc26.1.x.jar` (Fabric Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2`)
-  - `spotify-controller-0.8.0-fabric-mc1.21.1.jar` (Fabric Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1`)
-- **NeoForge:**
-  - `spotify-controller-0.8.0-neoforge-mc26.3.jar` (NeoForge `26.3.x`)
-  - `spotify-controller-0.8.0-neoforge-mc26.2.jar` (NeoForge `26.2.x`)
-  - `spotify-controller-0.8.0-neoforge-mc26.1.x.jar` (NeoForge `26.1.x`)
-  - `spotify-controller-0.8.0-neoforge-mc1.21.1.jar` (NeoForge `21.0.x` / `21.1.x`)
+Each release has one jar per loader and Minecraft version, named `spotify-controller-<version>-<loader>-mc<minecraft>.jar` (for example `…-fabric-mc26.3.jar`):
+
+| Minecraft | Jar ends in | Fabric | NeoForge |
+| :--- | :--- | :--- | :--- |
+| `26.3` | `-mc26.3.jar` | Loader `>=0.19.0`, Fabric API `0.166.2+26.3` | `26.3.x` |
+| `26.2` | `-mc26.2.jar` | Loader `>=0.19.0`, Fabric API `0.161.0+26.2` | `26.2.x` |
+| `26.1`–`26.1.2` | `-mc26.1.x.jar` | Loader `>=0.19.0`, Fabric API `0.155.3+26.1.2` | `26.1.x` |
+| `1.21` / `1.21.1` | `-mc1.21.1.jar` | Loader `>=0.16.0`, Fabric API `0.116.18+1.21.1` | `21.0.x` / `21.1.x` |
+
 - **Java:** `25` for `26.x`, or `21+` for `1.21` / `1.21.1`
 - **Spotify Account:**
   - Viewing the currently playing track works on Free and Premium accounts.
@@ -81,7 +81,7 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 ### Keybinds
 | Default Key | Action | Category |
 | :--- | :--- | :--- |
-| `O` | Open Spotify Config / Move HUD | Spotify Controller |
+| `O` | Open Spotify Config | Spotify Controller |
 | `Z` | Open Spotify Controller | Spotify Controller |
 | `\` | Toggle Spotify HUD | Spotify Controller |
 | `K` | Play / Pause Track | Spotify Controller |
@@ -92,7 +92,7 @@ Because everything runs client-side, it works in singleplayer and on any multipl
 | Command | Description |
 | :--- | :--- |
 | `/spotify` or `/spotify player` | Open the interactive Spotify Controller screen (or Setup Wizard if Client ID is unset) |
-| `/spotify config` | Open the Config / HUD positioning screen (or Setup Wizard if Client ID is unset) |
+| `/spotify config` | Open the Config screen (or Setup Wizard if Client ID is unset) |
 | `/spotify setup` | Open the interactive 3-step First-Time Setup Wizard |
 | `/spotify clientid <id>` | Set and save your Spotify Client ID from chat |
 | `/spotify login` | Start the browser OAuth PKCE login flow |
@@ -129,6 +129,4 @@ Requires **JDK 25** (and **JDK 21** toolchain installed for NeoForge `1.21.1`).
 
 *(On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.)*
 
-The compiled jars are output to `build/libs/`:
-- `spotify-controller-0.8.0-fabric-mc26.3.jar` / `spotify-controller-0.8.0-fabric-mc26.2.jar` / `spotify-controller-0.8.0-fabric-mc26.1.x.jar` / `spotify-controller-0.8.0-fabric-mc1.21.1.jar` (Fabric)
-- `spotify-controller-0.8.0-neoforge-mc26.3.jar` / `spotify-controller-0.8.0-neoforge-mc26.2.jar` / `spotify-controller-0.8.0-neoforge-mc26.1.x.jar` / `spotify-controller-0.8.0-neoforge-mc1.21.1.jar` (NeoForge)
+The compiled jars are output to `build/libs/` as `spotify-controller-<version>-<loader>-mc<minecraft>.jar`, where `<version>` is `mod_version` from `gradle.properties`.
