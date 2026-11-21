@@ -4,6 +4,16 @@ A client-side Fabric and NeoForge mod that connects to the Spotify Web API via O
 
 Because everything runs client-side, it works in singleplayer and on any multiplayer server without requiring server-side installation.
 
+<p align="center">
+  <img src="docs/screenshots/controller.png" alt="In-game Spotify Controller screen with album art, seek bar, transport controls and volume bar" width="560">
+  <br>
+  <em>Controller screen (<code>Z</code>)</em>
+  <br><br>
+  <img src="docs/screenshots/hud.png" alt="Now Playing HUD widget showing album art, title, artist and progress" width="330">
+  <br>
+  <em>Now Playing HUD widget</em>
+</p>
+
 ---
 
 ## Features
