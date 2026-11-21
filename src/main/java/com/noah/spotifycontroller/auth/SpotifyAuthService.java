@@ -31,6 +31,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -426,6 +427,12 @@ public class SpotifyAuthService {
         }
         return refreshAccessToken().thenApply(ok -> {
             if (!Boolean.TRUE.equals(ok)) {
+                // Rejected refresh tokens are cleared in handleTokenResponse. If one is still stored,
+                // the failure was transient (offline, Spotify 5xx), so report an error, not "logged out".
+                if (config.hasRefreshToken()) {
+                    throw new CompletionException(new IOException(
+                            SpotifyI18n.translate("status.spotify_controller.refresh_unreachable")));
+                }
                 return null;
             }
             synchronized (config) {

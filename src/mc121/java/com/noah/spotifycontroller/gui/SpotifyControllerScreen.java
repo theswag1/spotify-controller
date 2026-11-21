@@ -14,6 +14,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.FormattedCharSequence;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -28,6 +29,7 @@ public class SpotifyControllerScreen extends Screen {
     private static final int VOLUME_BAR_WIDTH = 178;
     private static final int ALBUM_ART_SIZE = 64;
     private static final long OPTIMISTIC_STATE_MS = 2500L;
+    private static final long ERROR_DISPLAY_MS = 5000L;
 
     private final Screen parent;
     private final SpotifyConfig config;
@@ -50,6 +52,9 @@ public class SpotifyControllerScreen extends Screen {
     private long optimisticRepeatUntilMs = 0L;
     private int optimisticVolume = -1;
     private long optimisticVolumeUntilMs = 0L;
+
+    private Component errorMessage;
+    private long errorUntilMs = 0L;
 
     public SpotifyControllerScreen(
             Screen parent,
@@ -150,6 +155,15 @@ public class SpotifyControllerScreen extends Screen {
 
         renderNowPlayingCard(guiGraphics, mouseX, mouseY, left, top, track);
         renderVolumeBar(guiGraphics, mouseX, mouseY, left, top, track);
+
+        // Drawn below the panel, on top of the blurred background, so failed actions are visible.
+        if (errorMessage != null && System.currentTimeMillis() < errorUntilMs) {
+            int y = top + PANEL_HEIGHT + 4;
+            for (FormattedCharSequence line : this.font.split(errorMessage, PANEL_WIDTH)) {
+                guiGraphics.drawString(this.font, line, (this.width - this.font.width(line)) / 2, y, 0xFFFF6B6B);
+                y += this.font.lineHeight + 1;
+            }
+        }
     }
 
     @Override
@@ -401,7 +415,19 @@ public class SpotifyControllerScreen extends Screen {
         action.whenComplete((result, throwable) -> client.execute(() -> {
             if (throwable == null && result != null && result.success()) {
                 poller.triggerImmediateRefresh(350L);
+                errorUntilMs = 0L;
+                return;
             }
+            // Snap optimistic button states back and say why the action failed.
+            optimisticPlayUntilMs = 0L;
+            optimisticShuffleUntilMs = 0L;
+            optimisticRepeatUntilMs = 0L;
+            optimisticVolumeUntilMs = 0L;
+            String message = throwable != null
+                    ? SpotifyI18n.translate("chat.spotify_controller.error", throwable.getMessage())
+                    : result != null ? result.message() : "";
+            errorMessage = Component.literal(message);
+            errorUntilMs = System.currentTimeMillis() + ERROR_DISPLAY_MS;
         }));
     }
 

@@ -33,6 +33,7 @@ public class SpotifyPoller {
 
     private volatile TrackState currentTrack;
     private volatile String lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.not_connected");
+    private volatile SpotifyApiClient.PlaybackPollStatus lastStatus = SpotifyApiClient.PlaybackPollStatus.UNAUTHENTICATED;
 
     public SpotifyPoller(SpotifyConfig config, SpotifyApiClient apiClient) {
         this.config = config;
@@ -131,6 +132,11 @@ public class SpotifyPoller {
         return lastStatusMessage;
     }
 
+    /** The state behind {@link #getLastStatusMessage()}, so callers can branch without parsing text. */
+    public SpotifyApiClient.PlaybackPollStatus getLastStatus() {
+        return lastStatus;
+    }
+
     public void setStatusMessage(String message) {
         if (message != null && !message.isBlank()) {
             this.lastStatusMessage = message;
@@ -141,15 +147,18 @@ public class SpotifyPoller {
         secondsSinceLastPoll.set(0);
         if (!config.hasClientId()) {
             currentTrack = null;
+            lastStatus = SpotifyApiClient.PlaybackPollStatus.NOT_CONFIGURED;
             lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.client_id_not_set");
             return;
         }
         if (!config.hasValidAccessToken() && !config.hasRefreshToken()) {
             currentTrack = null;
+            lastStatus = SpotifyApiClient.PlaybackPollStatus.UNAUTHENTICATED;
             lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.not_connected_hint");
             return;
         }
         if (apiClient.isRateLimited()) {
+            lastStatus = SpotifyApiClient.PlaybackPollStatus.RATE_LIMITED;
             lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.rate_limited");
             return;
         }
@@ -161,18 +170,21 @@ public class SpotifyPoller {
             try {
                 if (throwable != null) {
                     LOGGER.debug("Spotify background poll error", throwable);
-                    lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.poll_error", throwable.getMessage());
+                    lastStatus = SpotifyApiClient.PlaybackPollStatus.ERROR;
+                    lastStatusMessage = SpotifyI18n.translate("status.spotify_controller.poll_error",
+                            SpotifyApiClient.rootMessage(throwable));
                     return;
                 }
                 if (result == null) {
                     return;
                 }
+                lastStatus = result.status();
                 switch (result.status()) {
                     case ACTIVE -> {
                         currentTrack = result.track().orElse(null);
                         lastStatusMessage = result.message();
                     }
-                    case NO_PLAYBACK, UNAUTHENTICATED -> {
+                    case NOT_CONFIGURED, NO_PLAYBACK, UNAUTHENTICATED -> {
                         currentTrack = null;
                         lastStatusMessage = result.message();
                     }

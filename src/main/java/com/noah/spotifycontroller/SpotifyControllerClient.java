@@ -278,14 +278,6 @@ public class SpotifyControllerClient {
         return config;
     }
 
-    public static SpotifyAuthService getAuthService() {
-        return authService;
-    }
-
-    public static SpotifyApiClient getApiClient() {
-        return apiClient;
-    }
-
     public static SpotifyPoller getPoller() {
         return poller;
     }

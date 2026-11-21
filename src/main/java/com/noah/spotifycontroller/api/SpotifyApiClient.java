@@ -15,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 /**
  * Asynchronous client for the Spotify Web API playback endpoints.
@@ -28,6 +29,8 @@ public class SpotifyApiClient {
     }
 
     public enum PlaybackPollStatus {
+        /** No Client ID set yet; only reported by {@link SpotifyPoller}, never by the API client. */
+        NOT_CONFIGURED,
         ACTIVE,
         NO_PLAYBACK,
         UNAUTHENTICATED,
@@ -49,10 +52,6 @@ public class SpotifyApiClient {
 
     public boolean isRateLimited() {
         return System.currentTimeMillis() < rateLimitedUntilMillis;
-    }
-
-    public CompletableFuture<Optional<TrackState>> getPlaybackState() {
-        return pollPlaybackState().thenApply(PlaybackPollResult::track);
     }
 
     public CompletableFuture<PlaybackPollResult> pollPlaybackState() {
@@ -265,8 +264,17 @@ public class SpotifyApiClient {
                 })
                 .exceptionally(ex -> {
                     LOGGER.warn("Spotify API request {} {} failed", method, url, ex);
-                    return new ApiResult(false, SpotifyI18n.translate("status.spotify_controller.request_failed", ex.getMessage()));
+                    return new ApiResult(false, SpotifyI18n.translate("status.spotify_controller.request_failed", rootMessage(ex)));
                 });
+    }
+
+    /** Message of the real cause, without CompletionException's "java.io.IOException: " prefix. */
+    static String rootMessage(Throwable ex) {
+        Throwable cause = ex;
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
 
     private CompletableFuture<HttpResponse<String>> sendAuthorizedRequest(

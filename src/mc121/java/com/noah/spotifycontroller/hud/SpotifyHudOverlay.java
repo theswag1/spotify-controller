@@ -57,13 +57,6 @@ public class SpotifyHudOverlay {
     }
 
     /**
-     * Renders the Spotify "Now Playing" card at the given screen coordinates using the configured HUD scale.
-     */
-    public void renderCard(GuiGraphics guiGraphics, Font font, TrackState track, int x, int y) {
-        renderCard(guiGraphics, font, track, x, y, config.hudScale);
-    }
-
-    /**
      * Renders the Spotify "Now Playing" card at the given screen coordinates and scale factor.
      */
     public void renderCard(GuiGraphics guiGraphics, Font font, TrackState track, int x, int y, float scale) {
@@ -126,13 +119,6 @@ public class SpotifyHudOverlay {
     }
 
     /**
-     * Clamps the unscaled HUD X coordinate inside the visible screen bounds.
-     */
-    public static int clampX(int x, int screenWidth) {
-        return clampX(x, screenWidth, 1.0f);
-    }
-
-    /**
      * Clamps the scaled HUD X coordinate inside the visible screen bounds.
      */
     public static int clampX(int x, int screenWidth, float scale) {
@@ -141,25 +127,11 @@ public class SpotifyHudOverlay {
     }
 
     /**
-     * Clamps the unscaled HUD Y coordinate inside the visible screen bounds.
-     */
-    public static int clampY(int y, int screenHeight) {
-        return clampY(y, screenHeight, 1.0f);
-    }
-
-    /**
      * Clamps the scaled HUD Y coordinate inside the visible screen bounds.
      */
     public static int clampY(int y, int screenHeight, float scale) {
         int height = getScaledHeight(scale);
         return Math.max(2, Math.min(y, Math.max(2, screenHeight - height - 2)));
-    }
-
-    /**
-     * Returns whether the pointer coordinates fall within the unscaled HUD card rectangle.
-     */
-    public static boolean isPointInsideCard(double mouseX, double mouseY, int cardX, int cardY) {
-        return isPointInsideCard(mouseX, mouseY, cardX, cardY, 1.0f);
     }
 
     /**

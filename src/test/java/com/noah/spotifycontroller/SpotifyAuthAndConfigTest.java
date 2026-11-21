@@ -178,16 +178,16 @@ class SpotifyAuthAndConfigTest {
 
     @Test
     void clampsAndPersistsHudPositionAndHitTestsCardBounds(@TempDir Path tempDir) {
-        assertEquals(2, SpotifyHudOverlay.clampX(-50, 800));
-        assertEquals(800 - SpotifyHudOverlay.CARD_WIDTH - 2, SpotifyHudOverlay.clampX(2000, 800));
-        assertEquals(2, SpotifyHudOverlay.clampY(-10, 600));
-        assertEquals(600 - SpotifyHudOverlay.CARD_HEIGHT - 2, SpotifyHudOverlay.clampY(2000, 600));
+        assertEquals(2, SpotifyHudOverlay.clampX(-50, 800, 1.0f));
+        assertEquals(800 - SpotifyHudOverlay.CARD_WIDTH - 2, SpotifyHudOverlay.clampX(2000, 800, 1.0f));
+        assertEquals(2, SpotifyHudOverlay.clampY(-10, 600, 1.0f));
+        assertEquals(600 - SpotifyHudOverlay.CARD_HEIGHT - 2, SpotifyHudOverlay.clampY(2000, 600, 1.0f));
 
-        assertTrue(SpotifyHudOverlay.isPointInsideCard(10, 20, 10, 20));
-        assertTrue(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH - 1, 20 + SpotifyHudOverlay.CARD_HEIGHT - 1, 10, 20));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(9, 20, 10, 20));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH, 20, 10, 20));
-        assertFalse(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.CARD_HEIGHT, 10, 20));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10, 20, 10, 20, 1.0f));
+        assertTrue(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH - 1, 20 + SpotifyHudOverlay.CARD_HEIGHT - 1, 10, 20, 1.0f));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(9, 20, 10, 20, 1.0f));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10 + SpotifyHudOverlay.CARD_WIDTH, 20, 10, 20, 1.0f));
+        assertFalse(SpotifyHudOverlay.isPointInsideCard(10, 20 + SpotifyHudOverlay.CARD_HEIGHT, 10, 20, 1.0f));
 
         Path configPath = tempDir.resolve("hud_position.json");
         SpotifyConfig config = SpotifyConfig.loadFrom(configPath);
@@ -568,6 +568,64 @@ class SpotifyAuthAndConfigTest {
                 goodAuth.shutdown();
             }
         } finally {
+            mockSpotify.stop(0);
+        }
+    }
+
+    @Test
+    void refreshClearsTokensOnlyWhenSpotifyRejectsThem(@TempDir Path tempDir) throws Exception {
+        HttpServer mockSpotify = HttpServer.create(new InetSocketAddress(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), 0), 0);
+        mockSpotify.createContext("/api/token", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            int status;
+            String resp;
+            if (body.contains("refresh_token=revoked")) {
+                status = 400;
+                resp = "{\"error\":\"invalid_grant\",\"error_description\":\"Refresh token revoked\"}";
+            } else if (body.contains("refresh_token=flaky")) {
+                status = 500;
+                resp = "{\"error\":\"server_error\"}";
+            } else {
+                status = 200;
+                resp = "{\"access_token\":\"fresh-atk\",\"expires_in\":3600}";
+            }
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockSpotify.start();
+        String tokenUrl = "http://127.0.0.1:" + mockSpotify.getAddress().getPort() + "/api/token";
+
+        SpotifyConfig config = SpotifyConfig.loadFrom(tempDir.resolve("refresh.json"));
+        config.setClientId("client-id");
+        SpotifyAuthService auth = new SpotifyAuthService(config, HttpClient.newHttpClient(), uri -> {}, null, tokenUrl);
+        try {
+            // Spotify outage (5xx): keep the login, and report an error instead of "not connected".
+            config.accessToken = "expired-atk";
+            config.refreshToken = "flaky";
+            config.tokenExpiresAtEpochSeconds = 0L;
+            assertFalse(auth.refreshAccessToken().get(5, TimeUnit.SECONDS));
+            assertEquals("flaky", config.refreshToken);
+            java.util.concurrent.ExecutionException failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> auth.getValidAccessToken().get(5, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof IOException);
+
+            // Revoked refresh token (invalid_grant): clear the login so the user is asked to reconnect.
+            config.refreshToken = "revoked";
+            assertNull(auth.getValidAccessToken().get(5, TimeUnit.SECONDS));
+            assertFalse(config.hasRefreshToken());
+            assertEquals("", config.accessToken);
+
+            // Normal refresh: new access token, and the existing refresh token is kept.
+            config.refreshToken = "good";
+            assertEquals("fresh-atk", auth.getValidAccessToken().get(5, TimeUnit.SECONDS));
+            assertEquals("good", config.refreshToken);
+            assertTrue(config.hasValidAccessToken());
+        } finally {
+            auth.shutdown();
             mockSpotify.stop(0);
         }
     }

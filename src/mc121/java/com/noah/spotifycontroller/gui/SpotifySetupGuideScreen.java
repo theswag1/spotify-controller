@@ -55,15 +55,6 @@ public class SpotifySetupGuideScreen extends Screen {
             Screen parent,
             SpotifyConfig config,
             SpotifyAuthService authService,
-            SpotifyPoller poller
-    ) {
-        this(parent, config, authService, poller, SpotifyControllerClient.getHudOverlay());
-    }
-
-    public SpotifySetupGuideScreen(
-            Screen parent,
-            SpotifyConfig config,
-            SpotifyAuthService authService,
             SpotifyPoller poller,
             SpotifyHudOverlay hudOverlay
     ) {

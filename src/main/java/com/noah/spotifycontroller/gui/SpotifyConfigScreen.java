@@ -2,7 +2,6 @@ package com.noah.spotifycontroller.gui;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.cursor.CursorTypes;
-import com.noah.spotifycontroller.SpotifyControllerClient;
 import com.noah.spotifycontroller.api.SpotifyPoller;
 import com.noah.spotifycontroller.api.TrackState;
 import com.noah.spotifycontroller.auth.SpotifyAuthService;
@@ -65,15 +64,6 @@ public class SpotifyConfigScreen extends Screen {
     private boolean dirtyConfig = false;
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
-
-    public SpotifyConfigScreen(
-            Screen parent,
-            SpotifyConfig config,
-            SpotifyAuthService authService,
-            SpotifyPoller poller
-    ) {
-        this(parent, config, authService, poller, SpotifyControllerClient.getHudOverlay());
-    }
 
     public SpotifyConfigScreen(
             Screen parent,

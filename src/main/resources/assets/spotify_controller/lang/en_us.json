@@ -129,6 +129,7 @@
   "status.spotify_controller.not_connected_hint": "Not connected — click Connect Spotify or run /spotify login",
   "status.spotify_controller.rate_limited": "Rate limited by Spotify; pausing polls briefly",
   "status.spotify_controller.poll_error": "Error polling Spotify: %s",
+  "status.spotify_controller.refresh_unreachable": "Couldn't reach Spotify to renew your session. Retrying…",
   "status.spotify_controller.no_playback": "Connected (no active Spotify playback)",
   "status.spotify_controller.playing": "Playing: %s - %s",
   "status.spotify_controller.paused": "Paused: %s - %s",
