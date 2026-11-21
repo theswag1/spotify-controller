@@ -22,8 +22,8 @@ import java.util.Map;
  * falling back to the bundled {@code en_us.json} resource for headless contexts or missing keys.
  */
 public final class SpotifyI18n {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
-    private static final String EN_US_RESOURCE_PATH = "/assets/spotify_controller/lang/en_us.json";
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
+    private static final String EN_US_RESOURCE_PATH = "/assets/encore_music/lang/en_us.json";
     private static final Map<String, String> FALLBACK_EN_US = loadFallbackTranslations();
 
     private SpotifyI18n() {

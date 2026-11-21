@@ -33,11 +33,11 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 /**
- * Shared loader-agnostic client core for Minecraft 1.21.1 builds of Spotify Controller.
+ * Shared loader-agnostic client core for Minecraft 1.21.1 builds of Encore Music.
  */
 public class SpotifyControllerClient {
-    public static final String MOD_ID = "spotify_controller";
-    public static final String KEY_CATEGORY = "key.category.spotify_controller.main";
+    public static final String MOD_ID = "encore_music";
+    public static final String KEY_CATEGORY = "key.category.encore_music.main";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static SpotifyConfig config;
@@ -81,11 +81,11 @@ public class SpotifyControllerClient {
         if (config.checkForUpdates) {
             updateChecker.start(httpClient);
         }
-        LOGGER.info("Spotify Controller initialized");
+        LOGGER.info("Encore Music initialized");
     }
 
     /**
-     * Instantiates and registers all Spotify Controller keybinds using the loader-supplied registrar.
+     * Instantiates and registers all Encore Music keybinds using the loader-supplied registrar.
      */
     public static void registerKeyMappings(UnaryOperator<KeyMapping> registrar) {
         InputConstants.Type keyboardType = getKeyboardInputType();
@@ -260,7 +260,7 @@ public class SpotifyControllerClient {
     }
 
     /**
-     * Returns whether any Spotify Controller screen is currently open on the client.
+     * Returns whether any Encore Music screen is currently open on the client.
      */
     public static boolean isSpotifyUiOpen(Minecraft client) {
         if (client == null) {

@@ -20,11 +20,11 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * Persists Spotify Controller settings in {@code config/spotify_controller.json}
- * and OAuth PKCE tokens in {@code config/spotify_controller_tokens.json}.
+ * Persists Encore Music settings in {@code config/encore_music.json}
+ * and OAuth PKCE tokens in {@code config/encore_music_tokens.json}.
  */
 public class SpotifyConfig {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int DEFAULT_CALLBACK_PORT = 8888;
     private static final int DEFAULT_POLL_INTERVAL_SECONDS = 3;
@@ -79,7 +79,7 @@ public class SpotifyConfig {
             synchronized (SpotifyConfig.class) {
                 current = instance;
                 if (current == null) {
-                    Path path = resolveDefaultConfigDir().resolve("spotify_controller.json");
+                    Path path = resolveDefaultConfigDir().resolve("encore_music.json");
                     current = loadFrom(path);
                     instance = current;
                 }
@@ -178,7 +178,7 @@ public class SpotifyConfig {
                 migratedLegacyTokens = true;
             }
         } catch (IOException | JsonSyntaxException | IllegalStateException e) {
-            LOGGER.warn("Failed to read Spotify Controller config at {}, keeping current defaults", configPath, e);
+            LOGGER.warn("Failed to read Encore Music config at {}, keeping current defaults", configPath, e);
         }
 
         loadTokensFile();
@@ -224,7 +224,7 @@ public class SpotifyConfig {
                 writeFileAtomically(tokenPath, GSON.toJson(tokens), true);
             }
         } catch (IOException e) {
-            LOGGER.error("Failed to save Spotify Controller config to {}", configPath, e);
+            LOGGER.error("Failed to save Encore Music config to {}", configPath, e);
         }
     }
 

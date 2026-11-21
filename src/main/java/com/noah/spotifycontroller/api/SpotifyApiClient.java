@@ -22,7 +22,7 @@ import java.util.concurrent.CompletionException;
  * Asynchronous client for the Spotify Web API playback endpoints.
  */
 public class SpotifyApiClient {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
     private static final String BASE_URL = "https://api.spotify.com/v1/me/player";
     private static final String PLAYBACK_STATE_URL = BASE_URL + "?additional_types=track,episode";
 

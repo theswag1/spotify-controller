@@ -20,10 +20,10 @@ import java.util.Optional;
  * Checks GitHub once per game session for a release newer than the running mod version.
  */
 public final class UpdateChecker {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
-    public static final String RELEASES_URL = "https://github.com/theswag1/spotify-controller/releases";
-    private static final String LATEST_RELEASE_API = "https://api.github.com/repos/theswag1/spotify-controller/releases/latest";
-    private static final String VERSION_RESOURCE = "/assets/spotify_controller/version.txt";
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
+    public static final String RELEASES_URL = "https://github.com/theswag1/encore-music/releases";
+    private static final String LATEST_RELEASE_API = "https://api.github.com/repos/theswag1/encore-music/releases/latest";
+    private static final String VERSION_RESOURCE = "/assets/encore_music/version.txt";
 
     public record Release(String version, String url) {
     }
@@ -65,7 +65,7 @@ public final class UpdateChecker {
         HttpRequest request = HttpRequest.newBuilder(URI.create(LATEST_RELEASE_API))
                 .timeout(Duration.ofSeconds(10))
                 .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "spotify-controller-mod")
+                .header("User-Agent", "encore-music-mod")
                 .GET()
                 .build();
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
@@ -78,7 +78,7 @@ public final class UpdateChecker {
                             .filter(release -> compareVersions(release.version(), currentVersion) > 0)
                             .ifPresent(release -> {
                                 newerRelease = release;
-                                LOGGER.info("Spotify Controller update available: {} (running {})", release.version(), currentVersion);
+                                LOGGER.info("Encore Music update available: {} (running {})", release.version(), currentVersion);
                             });
                 })
                 .exceptionally(ex -> {

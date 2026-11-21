@@ -78,7 +78,7 @@ public class SpotifyControllerNeoForgeClient {
 
     private static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-                Commands.literal("spotify")
+                Commands.literal("encore")
                         .executes(context -> SpotifyControllerClient.requestOpenControllerScreen())
                         .then(Commands.literal("player")
                                 .executes(context -> SpotifyControllerClient.requestOpenControllerScreen()))

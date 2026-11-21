@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
-  "id": "spotify_controller",
+  "id": "encore_music",
   "version": "${version}",
-  "name": "Spotify Controller",
+  "name": "Encore Music",
   "description": "Control Spotify playback and view the currently playing track inside Minecraft using the Spotify Developer API.",
   "authors": [
-    "Noah"
+    "Noah Brooks"
   ],
   "contact": {
-    "homepage": "https://github.com/theswag1/spotify-controller",
-    "sources": "https://github.com/theswag1/spotify-controller",
-    "issues": "https://github.com/theswag1/spotify-controller/issues"
+    "homepage": "https://github.com/theswag1/encore-music",
+    "sources": "https://github.com/theswag1/encore-music",
+    "issues": "https://github.com/theswag1/encore-music/issues"
   },
   "license": "MIT",
-  "icon": "assets/spotify_controller/icon.png",
+  "icon": "assets/encore_music/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [

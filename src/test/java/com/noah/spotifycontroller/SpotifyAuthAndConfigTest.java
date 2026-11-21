@@ -64,7 +64,7 @@ class SpotifyAuthAndConfigTest {
 
     @Test
     void savesAndReloadsConfigWithTrimmedClientIdAndTokens(@TempDir Path tempDir) throws IOException {
-        Path configPath = tempDir.resolve("spotify_controller.json");
+        Path configPath = tempDir.resolve("encore_music.json");
 
         SpotifyConfig created = SpotifyConfig.loadFrom(configPath);
         assertFalse(created.hasClientId());
@@ -457,7 +457,7 @@ class SpotifyAuthAndConfigTest {
         assertTrue(SpotifyI18n.getFallbackTranslations().size() >= 90);
         assertEquals("Set volume to 75%.", SpotifyI18n.translate("status.spotify_controller.volume_set", 75));
         assertEquals(
-                "[Spotify] Not set up yet! Press [O] or run /spotify setup for the first-time setup guide.",
+                "[Encore] Not set up yet! Press [O] or run /encore setup for the first-time setup guide.",
                 SpotifyI18n.translate("chat.spotify_controller.setup_prompt", "O")
         );
         assertEquals("HUD Widget: ON", SpotifyI18n.translate("screen.spotify_controller.config.hud_on"));
@@ -682,10 +682,10 @@ class SpotifyAuthAndConfigTest {
         assertEquals(0, UpdateChecker.compareVersions(null, "0.6.2"));
 
         Optional<UpdateChecker.Release> release = UpdateChecker.parseLatestRelease(
-                "{\"tag_name\":\"v0.7.0\",\"html_url\":\"https://github.com/theswag1/spotify-controller/releases/tag/v0.7.0\"}");
+                "{\"tag_name\":\"v0.7.0\",\"html_url\":\"https://github.com/theswag1/encore-music/releases/tag/v0.7.0\"}");
         assertTrue(release.isPresent());
         assertEquals("v0.7.0", release.get().version());
-        assertEquals("https://github.com/theswag1/spotify-controller/releases/tag/v0.7.0", release.get().url());
+        assertEquals("https://github.com/theswag1/encore-music/releases/tag/v0.7.0", release.get().url());
 
         // A link outside this repo's releases is never shown; fall back to the releases page.
         Optional<UpdateChecker.Release> foreign = UpdateChecker.parseLatestRelease(

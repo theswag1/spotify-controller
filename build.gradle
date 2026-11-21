@@ -154,7 +154,7 @@ processResources {
         exclude "META-INF/neoforge.mods.toml"
     }
 
-    filesMatching(["fabric.mod.json", "META-INF/neoforge.mods.toml", "assets/spotify_controller/version.txt"]) {
+    filesMatching(["fabric.mod.json", "META-INF/neoforge.mods.toml", "assets/encore_music/version.txt"]) {
         expand(
                 "version": inputs.properties.version,
                 "fabric_loader_range": inputs.properties.fabric_loader_range,

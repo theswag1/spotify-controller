@@ -37,12 +37,12 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 /**
- * Shared loader-agnostic client core for the Spotify Controller mod.
+ * Shared loader-agnostic client core for the Encore Music mod.
  * Mod-loader entrypoints initialize this core and forward lifecycle, keybind,
  * HUD rendering, tick, and client command events.
  */
 public class SpotifyControllerClient {
-    public static final String MOD_ID = "spotify_controller";
+    public static final String MOD_ID = "encore_music";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static SpotifyConfig config;
@@ -86,7 +86,7 @@ public class SpotifyControllerClient {
         if (config.checkForUpdates) {
             updateChecker.start(httpClient);
         }
-        LOGGER.info("Spotify Controller initialized");
+        LOGGER.info("Encore Music initialized");
     }
 
     /**
@@ -104,7 +104,7 @@ public class SpotifyControllerClient {
     }
 
     /**
-     * Instantiates and registers all Spotify Controller keybinds using the loader-supplied registrar.
+     * Instantiates and registers all Encore Music keybinds using the loader-supplied registrar.
      */
     public static void registerKeyMappings(
             KeyMapping.Category category,
@@ -298,7 +298,7 @@ public class SpotifyControllerClient {
     }
 
     /**
-     * Returns whether any Spotify Controller screen is currently open on the client.
+     * Returns whether any Encore Music screen is currently open on the client.
      */
     public static boolean isSpotifyUiOpen(Minecraft client) {
         if (client == null) {

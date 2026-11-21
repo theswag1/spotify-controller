@@ -24,8 +24,8 @@ import java.util.function.LongSupplier;
  * Minecraft {@link DynamicTexture} on the render thread (Minecraft 1.21.1).
  */
 public class AlbumArtManager {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
-    public static final ResourceLocation ALBUM_ART_ID = ResourceLocation.fromNamespaceAndPath("spotify_controller", "album_art");
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
+    public static final ResourceLocation ALBUM_ART_ID = ResourceLocation.fromNamespaceAndPath("encore_music", "album_art");
     public static final long DEFAULT_RETRY_COOLDOWN_MS = 30_000L;
     private static final int MAX_FAILED_CACHE_SIZE = 64;
 

@@ -13,4 +13,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'spotify-controller'
+rootProject.name = 'encore-music'

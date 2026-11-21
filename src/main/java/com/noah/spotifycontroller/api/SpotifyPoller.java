@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * playback state fresh without blocking Minecraft's client tick or render threads.
  */
 public class SpotifyPoller {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
     public static final int IDLE_PAUSED_POLL_SECONDS = 6;
     public static final int IDLE_NO_PLAYBACK_POLL_SECONDS = 8;
     public static final int IDLE_MENU_POLL_SECONDS = 10;
@@ -42,7 +42,7 @@ public class SpotifyPoller {
         this.config = config;
         this.apiClient = apiClient;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "spotify-controller-poller");
+            Thread t = new Thread(r, "encore-music-poller");
             t.setDaemon(true);
             return t;
         });

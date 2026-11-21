@@ -46,7 +46,7 @@ import java.util.function.Consumer;
  * local loopback callback handling, and automatic access token refreshes.
  */
 public class SpotifyAuthService {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spotify_controller");
+    private static final Logger LOGGER = LoggerFactory.getLogger("encore_music");
     private static final String DEFAULT_AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize";
     private static final String DEFAULT_TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
     private static final String SCOPES = "user-read-playback-state user-read-currently-playing user-modify-playback-state";
@@ -211,7 +211,7 @@ public class SpotifyAuthService {
                 return;
             }
             if (!handled.compareAndSet(false, true)) {
-                sendHtmlResponse(exchange, 200, "Spotify Controller",
+                sendHtmlResponse(exchange, 200, "Encore Music",
                         "Authentication already processed. You may close this tab.", false, 0);
                 return;
             }
@@ -451,9 +451,9 @@ public class SpotifyAuthService {
             String formBody = buildFormBody(Map.of(
                     "client_id", clientId,
                     "grant_type", "authorization_code",
-                    "code", "spotify_controller_probe",
+                    "code", "encore_music_probe",
                     "redirect_uri", redirectUri,
-                    "code_verifier", "spotify_controller_probe_verifier"
+                    "code_verifier", "encore_music_probe_verifier"
             ));
             HttpRequest request = HttpRequest.newBuilder(URI.create(tokenEndpoint))
                     .timeout(Duration.ofSeconds(4))

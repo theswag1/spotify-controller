@@ -43,7 +43,7 @@ public class SpotifyControllerFabricClient implements ClientModInitializer {
 
     private static void registerClientCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
-                ClientCommandManager.literal("spotify")
+                ClientCommandManager.literal("encore")
                         .executes(context -> SpotifyControllerClient.requestOpenControllerScreen())
                         .then(ClientCommandManager.literal("player")
                                 .executes(context -> SpotifyControllerClient.requestOpenControllerScreen()))

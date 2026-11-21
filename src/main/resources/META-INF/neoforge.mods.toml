@@ -3,25 +3,25 @@ loaderVersion="[1,)"
 license="MIT"
 
 [[mods]]
-modId="spotify_controller"
+modId="encore_music"
 version="${version}"
-displayName="Spotify Controller"
-authors="Noah"
-iconFile="assets/spotify_controller/icon.png"
+displayName="Encore Music"
+authors="Noah Brooks"
+iconFile="assets/encore_music/icon.png"
 iconBlur=false
-bannerFile="assets/spotify_controller/icon.png"
-logoFile="assets/spotify_controller/icon.png"
+bannerFile="assets/encore_music/icon.png"
+logoFile="assets/encore_music/icon.png"
 logoBlur=false
 description='''Control Spotify playback and view the currently playing track inside Minecraft using the Spotify Developer API.'''
 
-[[dependencies.spotify_controller]]
+[[dependencies.encore_music]]
 modId="neoforge"
 type="required"
 versionRange="${neoforge_range}"
 ordering="NONE"
 side="CLIENT"
 
-[[dependencies.spotify_controller]]
+[[dependencies.encore_music]]
 modId="minecraft"
 type="required"
 versionRange="${neoforge_mc_range}"
